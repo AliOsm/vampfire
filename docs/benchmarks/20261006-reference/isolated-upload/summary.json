@@ -1,0 +1,22 @@
+{
+  "rust": {
+    "repetitions": 3,
+    "successful_uploads": 15,
+    "median_ms": 67.9,
+    "min_repetition_median_ms": 66.8,
+    "max_repetition_median_ms": 68.3,
+    "thumbnail_bytes": [
+      84296
+    ]
+  },
+  "vampfire": {
+    "repetitions": 3,
+    "successful_uploads": 15,
+    "median_ms": 423.190558,
+    "min_repetition_median_ms": 413.969377,
+    "max_repetition_median_ms": 426.43346199999996,
+    "thumbnail_bytes": [
+      54003
+    ]
+  }
+}

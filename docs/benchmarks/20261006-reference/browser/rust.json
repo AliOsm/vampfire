@@ -1,0 +1,14 @@
+{
+  "app": "rust",
+  "browser": "151.0.7922.34",
+  "measured": false,
+  "pageErrors": [],
+  "badResponses": [],
+  "websockets": 2,
+  "login": true,
+  "roomMessages": 40,
+  "roomTitle": "All Talk",
+  "earlierFragmentMessages": 40,
+  "searchMatches": 13,
+  "passed": true
+}

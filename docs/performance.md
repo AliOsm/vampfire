@@ -1,5 +1,9 @@
 # Measured performance
 
+For the original Campfire Ruby/Rust workloads run against both implementations,
+see **[Rust vs V](rust-vs-v.md)**. The results below use the smaller development
+smoke workload and should not be mixed with that comparison.
+
 Measured locally on 2026-10-06, using the final release binary.
 Intel Core i5-8500 (6 cores, 3.00 GHz), Linux x86-64, GCC 15.2.0.
 Exact V source/bootstrap revisions, flags, source and binary hashes, OS details,
@@ -42,5 +46,5 @@ These short runs are a reproducible application smoke benchmark, **not a capacit
 limit, a soak test, or evidence of beating Rails/Rust**. The SQLite writer is
 serialized; concurrent writes show a longer tail than single-sender delivery.
 A deployment needs a representative workload and sustained tests before sizing.
-No cross-language comparison is presented because no equivalent reference run
-was performed on this hardware with this workload.
+These particular numbers have no cross-language counterpart. The separate
+[Rust/V comparison](rust-vs-v.md) uses the upstream reference benchmark and seed.

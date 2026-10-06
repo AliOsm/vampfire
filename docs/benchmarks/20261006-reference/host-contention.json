@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-06T18:55:24.337521+00:00",
+  "load": "9.24 5.95 4.34 6/2109 835979",
+  "processes": [
+    {
+      "pid": 805863,
+      "comm": "vampfire",
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/run-p677390-i365414844.scope"
+    }
+  ],
+  "ps": [
+    "    PID %CPU   RSS COMMAND",
+    " 805863  139 41192 vampfire",
+    " 835978 80.0 14800 python",
+    " 834503 60.6 236772 ruby",
+    " 834498 57.7 222732 ruby",
+    " 834510 57.3 247140 ruby",
+    " 834496 55.9 216464 ruby",
+    " 834800 24.1  5548 loadgen",
+    " 835613 22.0 63752 postgres",
+    " 833487 20.6 205672 ruby",
+    " 834590 16.9 60096 postgres",
+    " 834587 15.9 57792 postgres",
+    " 835884 15.3 55340 postgres"
+  ]
+}

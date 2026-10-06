@@ -1,0 +1,16 @@
+{
+  "case": "upload",
+  "apps": [
+    "rust",
+    "vampfire"
+  ],
+  "clients": [
+    500,
+    1000
+  ],
+  "repetitions": 3,
+  "out": ".build/comparison/isolated-upload-20261006",
+  "loadgen_sha256": "b38fa571ec63fb8d444921277f8892aa61bb73f650cd6962baf749502cce373b",
+  "protocol_diagnostics": "Up to five WebSocket read errors/close frames are logged; app unchanged.",
+  "scope": "Fresh isolated seed for each scenario; kept separate from the full-suite medians."
+}

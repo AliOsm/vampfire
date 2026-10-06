@@ -1,0 +1,140 @@
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -20,6 +20,8 @@
+ //! WebSocket handshakes included; without it there is no `User-Agent` header. For example, a
+ //! desktop Chrome: `--user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+ //! (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'` (one line).
++
++mod vampfire;
+ 
+ use std::collections::{HashMap, HashSet};
+ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+@@ -245,6 +247,7 @@
+ }
+ 
+ fn message_request(cookie: &str, csrf: &str, body_text: &str) -> (Vec<(&'static str, String)>, Bytes) {
++    if vampfire::enabled() { return vampfire::message(cookie, csrf, body_text); }
+     let body = form(&[("message[body]", body_text), ("message[client_message_id]", &nonce()), ("authenticity_token", csrf)]);
+     (
+         vec![
+@@ -265,6 +268,7 @@
+     let conc: usize = a.num("conc", 1);
+     let duration = Duration::from_secs_f64(a.num("duration", 10.0));
+     let post_room = a.opt("post-room");
++    let extra: Vec<String> = a.opt("extra-paths").unwrap_or_default().split(',').filter(|p| !p.is_empty()).map(str::to_string).collect();
+     let csrf = a.opt("csrf").unwrap_or_default();
+     let gzip = a.num("gzip", 1u8) != 0;
+     let accept_encoding = if gzip { "gzip" } else { "identity" };
+@@ -285,6 +289,7 @@
+         let (hist_all, statuses, errors, bytes_total, issued, trace) =
+             (hist_all.clone(), statuses.clone(), errors.clone(), bytes_total.clone(), issued.clone(), trace.clone());
+         let tracing = trace_path.is_some();
++        let extra = extra.clone();
+         tasks.push(tokio::spawn(async move {
+             let mut h = hist();
+             let mut local = HashMap::<u16, u64>::new();
+@@ -307,7 +312,7 @@
+                         i += 1;
+                         let (mut h, b) = message_request(&cookie, &csrf, &format!("bench write {i}"));
+                         h.push(("accept-encoding", accept_encoding.into()));
+-                        ("POST", format!("/rooms/{room}/messages"), h, b)
++                        ("POST", vampfire::post_path(room), h, b)
+                     }
+                     None => {
+                         let mut h = vec![("cookie", cookie.clone())];
+@@ -318,14 +323,14 @@
+                 let t0 = Instant::now();
+                 let wall0 =
+                     if tracing { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros() } else { 0 };
+-                match send(conn.as_mut().unwrap(), &addr, method, &p, &headers, body).await {
+-                    Ok(r) => {
++                match vampfire::send_http(conn.as_mut().unwrap(), &addr, method, &p, &headers, body, &extra).await {
++                    Ok((r, response_bytes)) => {
+                         h.record(t0.elapsed().as_micros() as u64).ok();
+                         if tracing {
+                             local_trace.push((wall0, t0.elapsed().as_micros() as u64, r.status));
+                         }
+                         *local.entry(r.status).or_default() += 1;
+-                        bytes_total.fetch_add(r.body.len() as u64, Ordering::Relaxed);
++                        bytes_total.fetch_add(response_bytes, Ordering::Relaxed);
+                         if r.headers.get("connection").map(|v| v == "close").unwrap_or(false) {
+                             conn = None;
+                         }
+@@ -376,6 +381,7 @@
+ // Action Cable fan-out
+ 
+ struct Delivery {
++    post_errors: AtomicU64,
+     sent: Mutex<HashMap<u64, Instant>>,
+     got: Mutex<HashMap<u64, (usize, Instant)>>, // seq -> (clients received, last receipt)
+     per_client: Mutex<Histogram<u64>>,
+@@ -411,6 +417,7 @@
+     stop: Arc<AtomicBool>,
+     delivery: Arc<Delivery>,
+ ) -> Res<()> {
++    if vampfire::enabled() { return vampfire::cable_client(addr, source, cookie, subs, confirmed, connected, stop, delivery).await; }
+     let mut req = format!("ws://{addr}/cable").into_client_request()?;
+     let h = req.headers_mut();
+     h.insert("cookie", cookie.parse()?);
+@@ -623,9 +630,10 @@
+     let (h, b) = message_request(cookie, csrf, &format!("fanout bmk{seq}z"));
+     let t0 = Instant::now();
+     delivery.sent.lock().unwrap().insert(seq, t0);
+-    match send(sender.as_mut()?, addr, "POST", &format!("/rooms/{room}/messages"), &h, b).await {
++    match send(sender.as_mut()?, addr, "POST", &vampfire::post_path(room), &h, b).await {
+         Ok(r) if r.status < 400 => Some(t0.elapsed().as_micros() as u64),
+         _ => {
++            delivery.post_errors.fetch_add(1, Ordering::Relaxed);
+             *sender = None;
+             None
+         }
+@@ -696,7 +704,10 @@
+         subs.push(json!({"channel": channel, "signed_stream_name": name}).to_string());
+     }
+ 
++    if vampfire::enabled() { subs = vec![room.clone()]; }
++
+     let delivery = Arc::new(Delivery {
++        post_errors: AtomicU64::new(0),
+         sent: Mutex::new(HashMap::new()),
+         got: Mutex::new(HashMap::new()),
+         per_client: Mutex::new(hist()),
+@@ -858,6 +869,7 @@
+         "clients": clients,
+         "ready": ready,
+         "failed": failed.load(Ordering::Relaxed),
++        "post_errors": delivery.post_errors.load(Ordering::Relaxed),
+         "connect_secs": (connect_secs * 100.0).round() / 100.0,
+         "subscriptions_per_client": subs.len(),
+         "latency": latency,
+@@ -910,7 +922,8 @@
+         .await?;
+         let post_ms = t0.elapsed().as_secs_f64() * 1000.0;
+         let html = String::from_utf8_lossy(&r.body).to_string();
+-        let Some(src) = img_re.captures(&html).map(|c| unescape(&c[1])) else {
++        let Some(src) = img_re.captures_iter(&html).map(|c| unescape(&c[1]))
++            .find(|src| a.num("actual-thumbnail", 0u8) == 0 || src.contains("/representations/")) else {
+             runs.push(json!({"post_status": r.status, "post_ms": post_ms, "error": "no <img> in response"}));
+             continue;
+         };
+@@ -930,7 +943,7 @@
+         }
+         let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
+         runs.push(json!({
+-            "post_status": r.status, "post_ms": (post_ms * 10.0).round() / 10.0,
++            "post_status": r.status, "selected_image_url": src, "post_ms": (post_ms * 10.0).round() / 10.0,
+             "thumb_status": status, "thumb_bytes": size, "thumb_ms": ((total_ms - post_ms) * 10.0).round() / 10.0,
+             "total_ms": (total_ms * 10.0).round() / 10.0,
+         }));
+@@ -1002,7 +1015,11 @@
+     let cmd = raw.get(1).cloned().unwrap_or_default();
+     let a = Args::parse(&raw[2.min(raw.len())..]);
+     USER_AGENT.set(a.opt("user-agent")).expect("set once");
++    vampfire::ENABLED.store(a.opt("app").as_deref() == Some("vampfire"), Ordering::Relaxed);
+     let out = match cmd.as_str() {
++        "login" if vampfire::enabled() => vampfire::login(&a).await,
++        "scrape" if vampfire::enabled() => vampfire::scrape(&a).await,
++        "upload" if vampfire::enabled() => vampfire::upload(&a).await,
+         "login" => login(&a).await,
+         "scrape" => scrape(&a).await,
+         "http" => http_load(&a).await,

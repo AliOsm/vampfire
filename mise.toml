@@ -52,3 +52,15 @@ run = ["python scripts/resource_guard.py --report-dir .build/resource-reports --
 [tasks.bench]
 description = "Run a bounded local application benchmark"
 run = "python scripts/resource_guard.py --report-dir .build/resource-reports --timeout 120 -- python tests/benchmark.py"
+
+[tasks."bench:reference:prepare"]
+description = "Prepare the pinned Campfire reference benchmark and original seed"
+run = "python benchmarks/reference/prepare.py"
+
+[tasks."bench:reference:smoke"]
+description = "Verify Rust/V protocol adapters and equivalent seed responses"
+run = "python scripts/resource_guard.py --report-dir .build/resource-reports --memory-high-mib 768 --timeout 600 -- python benchmarks/reference/run.py --smoke"
+
+[tasks."bench:reference"]
+description = "Run three bounded comparisons using the original Campfire benchmark workloads"
+run = "python scripts/resource_guard.py --report-dir .build/resource-reports --memory-high-mib 768 --timeout 3600 -- python benchmarks/reference/run.py"

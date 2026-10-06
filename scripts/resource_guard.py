@@ -29,8 +29,10 @@ def main(args):
             raise SystemExit("Another guarded experiment is running; wait for it to finish")
         command = ["systemd-run", "--user", "--scope", "--quiet", "--collect",
                    f"--property=MemoryMax={args.memory_mib}M", "--property=MemorySwapMax=0",
+                   *([f"--property=MemoryHigh={args.memory_high_mib}M"] if args.memory_high_mib else []),
                    sys.executable, str(Path(__file__).resolve()), "--inside",
                    "--memory-mib", str(args.memory_mib), "--timeout", str(args.timeout),
+                   *(["--memory-high-mib", str(args.memory_high_mib)] if args.memory_high_mib else []),
                    "--report", str(report), "--", *args.command]
         return subprocess.call(command)
     entry = next(line.split(":", 2)[2] for line in Path("/proc/self/cgroup").read_text().splitlines()
@@ -39,6 +41,8 @@ def main(args):
     limit = args.memory_mib * 1024**2
     assert (group / "memory.max").read_text().strip() == str(limit)
     assert (group / "memory.swap.max").read_text().strip() == "0"
+    if args.memory_high_mib:
+        assert (group / "memory.high").read_text().strip() == str(args.memory_high_mib * 1024**2)
     soft_limit = int(limit * .75)
     print(f"Resource guard: {args.memory_mib} MiB hard cap, no swap; "
           f"stop at {soft_limit // 1024**2} MiB or {args.timeout:g}s", flush=True)
@@ -66,6 +70,7 @@ def main(args):
     except KeyboardInterrupt:
         reason = "interrupted"
     finally:
+        memory_stat_at_stop = (group / "memory.stat").read_text()
         if reason:
             for raw_pid in (group / "cgroup.procs").read_text().split():
                 try:
@@ -100,6 +105,8 @@ def main(args):
         events = (group / "memory.events").read_text()
         record = dict(command=args.command, cwd=os.getcwd(), cgroup=entry,
                       memory_max_bytes=limit, memory_swap_max_bytes=0,
+                      memory_high_bytes=(group / "memory.high").read_text().strip(),
+                      memory_stat_at_stop=memory_stat_at_stop,
                       sampled_peak_bytes=peak, memory_events=events,
                       memory_peak_bytes=int((group / "memory.peak").read_text()),
                       processes_at_stop=processes,
@@ -118,6 +125,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--memory-mib", type=int, default=1536)
+    parser.add_argument("--memory-high-mib", type=int, help="Optional earlier kernel reclaim/throttling threshold; does not raise the hard or early-stop limits")
     parser.add_argument("--timeout", type=float, default=600)
     reports = parser.add_mutually_exclusive_group(required=True)
     reports.add_argument("--report")
@@ -126,4 +134,5 @@ if __name__ == "__main__":
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     assert args.memory_mib >= 64 and args.timeout > 0
+    assert args.memory_high_mib is None or 0 < args.memory_high_mib < args.memory_mib * .75
     raise SystemExit(main(args))
