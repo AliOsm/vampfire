@@ -1,0 +1,149 @@
+{
+  "source": "pidstat -H -h -u -r 2; CPU percent sums process names, 100% is one core",
+  "runs": [
+    {
+      "run": "rust-1",
+      "samples": 146,
+      "start_unix_seconds": 1791317520.221,
+      "end_unix_seconds": 1791317812.416,
+      "external_processes": {
+        "ruby": {
+          "mean_cpu_percent": 94.8,
+          "max_cpu_percent": 330.5
+        },
+        "postgres": {
+          "mean_cpu_percent": 13.0,
+          "max_cpu_percent": 91.0
+        },
+        "java": {
+          "mean_cpu_percent": 0.6,
+          "max_cpu_percent": 1.5
+        },
+        "clickhouse-serv": {
+          "mean_cpu_percent": 7.6,
+          "max_cpu_percent": 80.5
+        }
+      }
+    },
+    {
+      "run": "rust-2",
+      "samples": 146,
+      "start_unix_seconds": 1791318683.955,
+      "end_unix_seconds": 1791318976.945,
+      "external_processes": {
+        "ruby": {
+          "mean_cpu_percent": 56.0,
+          "max_cpu_percent": 334.0
+        },
+        "postgres": {
+          "mean_cpu_percent": 7.6,
+          "max_cpu_percent": 86.5
+        },
+        "java": {
+          "mean_cpu_percent": 0.6,
+          "max_cpu_percent": 13.0
+        },
+        "clickhouse-serv": {
+          "mean_cpu_percent": 6.3,
+          "max_cpu_percent": 33.0
+        }
+      }
+    },
+    {
+      "run": "rust-3",
+      "samples": 146,
+      "start_unix_seconds": 1791319037.186,
+      "end_unix_seconds": 1791319330.09,
+      "external_processes": {
+        "ruby": {
+          "mean_cpu_percent": 200.2,
+          "max_cpu_percent": 340.5
+        },
+        "postgres": {
+          "mean_cpu_percent": 31.1,
+          "max_cpu_percent": 82.5
+        },
+        "java": {
+          "mean_cpu_percent": 0.6,
+          "max_cpu_percent": 1.0
+        },
+        "clickhouse-serv": {
+          "mean_cpu_percent": 6.7,
+          "max_cpu_percent": 34.0
+        }
+      }
+    },
+    {
+      "run": "vampfire-1",
+      "samples": 173,
+      "start_unix_seconds": 1791317872.701,
+      "end_unix_seconds": 1791318218.168,
+      "external_processes": {
+        "ruby": {
+          "mean_cpu_percent": 0.0,
+          "max_cpu_percent": 0
+        },
+        "postgres": {
+          "mean_cpu_percent": 0.5,
+          "max_cpu_percent": 5.0
+        },
+        "java": {
+          "mean_cpu_percent": 0.6,
+          "max_cpu_percent": 13.0
+        },
+        "clickhouse-serv": {
+          "mean_cpu_percent": 6.5,
+          "max_cpu_percent": 29.5
+        }
+      }
+    },
+    {
+      "run": "vampfire-2",
+      "samples": 173,
+      "start_unix_seconds": 1791318278.314,
+      "end_unix_seconds": 1791318623.774,
+      "external_processes": {
+        "ruby": {
+          "mean_cpu_percent": 0.7,
+          "max_cpu_percent": 52.0
+        },
+        "postgres": {
+          "mean_cpu_percent": 0.5,
+          "max_cpu_percent": 2.0
+        },
+        "java": {
+          "mean_cpu_percent": 0.6,
+          "max_cpu_percent": 13.0
+        },
+        "clickhouse-serv": {
+          "mean_cpu_percent": 6.3,
+          "max_cpu_percent": 28.5
+        }
+      }
+    },
+    {
+      "run": "vampfire-3",
+      "samples": 173,
+      "start_unix_seconds": 1791319390.313,
+      "end_unix_seconds": 1791319736.103,
+      "external_processes": {
+        "ruby": {
+          "mean_cpu_percent": 97.8,
+          "max_cpu_percent": 337.0
+        },
+        "postgres": {
+          "mean_cpu_percent": 11.9,
+          "max_cpu_percent": 89.0
+        },
+        "java": {
+          "mean_cpu_percent": 19.5,
+          "max_cpu_percent": 289.5
+        },
+        "clickhouse-serv": {
+          "mean_cpu_percent": 6.5,
+          "max_cpu_percent": 34.0
+        }
+      }
+    }
+  ]
+}

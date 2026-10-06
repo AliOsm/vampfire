@@ -1,0 +1,95 @@
+[
+  {
+    "rep": 1,
+    "jobs_by_kind_and_attempt": [
+      {
+        "kind": "notify",
+        "attempts": 0,
+        "count": 34307
+      },
+      {
+        "kind": "notify",
+        "attempts": 1,
+        "count": 259
+      },
+      {
+        "kind": "notify",
+        "attempts": 2,
+        "count": 799
+      },
+      {
+        "kind": "notify",
+        "attempts": 3,
+        "count": 8047
+      }
+    ],
+    "errors": [
+      {
+        "error": "Only standard web ports are supported.",
+        "count": 9105
+      }
+    ]
+  },
+  {
+    "rep": 2,
+    "jobs_by_kind_and_attempt": [
+      {
+        "kind": "notify",
+        "attempts": 0,
+        "count": 37128
+      },
+      {
+        "kind": "notify",
+        "attempts": 1,
+        "count": 131
+      },
+      {
+        "kind": "notify",
+        "attempts": 2,
+        "count": 2257
+      },
+      {
+        "kind": "notify",
+        "attempts": 3,
+        "count": 6548
+      }
+    ],
+    "errors": [
+      {
+        "error": "Only standard web ports are supported.",
+        "count": 8936
+      }
+    ]
+  },
+  {
+    "rep": 3,
+    "jobs_by_kind_and_attempt": [
+      {
+        "kind": "notify",
+        "attempts": 0,
+        "count": 37466
+      },
+      {
+        "kind": "notify",
+        "attempts": 1,
+        "count": 1584
+      },
+      {
+        "kind": "notify",
+        "attempts": 2,
+        "count": 469
+      },
+      {
+        "kind": "notify",
+        "attempts": 3,
+        "count": 7675
+      }
+    ],
+    "errors": [
+      {
+        "error": "Only standard web ports are supported.",
+        "count": 9728
+      }
+    ]
+  }
+]

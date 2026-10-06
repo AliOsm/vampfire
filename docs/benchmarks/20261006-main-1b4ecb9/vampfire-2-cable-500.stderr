@@ -1,0 +1,13 @@
+PHASE connect 1791318521485
+V WebSocket read failed: WebSocket protocol error: Connection reset without closing handshake
+V WebSocket read failed: WebSocket protocol error: Connection reset without closing handshake
+V WebSocket read failed: WebSocket protocol error: Connection reset without closing handshake
+V WebSocket read failed: WebSocket protocol error: Connection reset without closing handshake
+V WebSocket read failed: WebSocket protocol error: Connection reset without closing handshake
+PHASE connected 1791318521624
+PHASE paced 1791318522625
+PHASE paced_drained 1791318548707
+PHASE saturated 1791318548707
+PHASE saturated_posted 1791318563777
+PHASE saturated_drained 1791318623798
+PHASE done 1791318623798
