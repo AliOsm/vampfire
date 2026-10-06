@@ -1,0 +1,54 @@
+[tools]
+python = "3.14.8"
+node = "26.10.0"
+ffmpeg = "9.0.2"
+
+[env]
+VJOBS = "1"
+VAMPFIRE_DATA = "{{config_root}}/.data"
+_.file = { paths = [".env", ".data/push.env"], required = false, redact = true }
+
+[tasks.setup]
+description = "Build the pinned upstream V toolchain under a memory cap"
+run = "python scripts/resource_guard.py --report-dir .build/resource-reports --timeout 600 -- python scripts/toolchain.py"
+
+[tasks.build]
+description = "Compile Vampfire with upstream V and GCC"
+run = "python scripts/resource_guard.py --report-dir .build/resource-reports --timeout 600 -- python scripts/build.py"
+
+[tasks.dev]
+description = "Start the app on localhost:8080"
+depends = ["build"]
+run = ".build/vampfire"
+
+[tasks.services]
+description = "Start the bounded Docker development proxy"
+run = "docker compose up -d --wait"
+
+[tasks."services:stop"]
+run = "docker compose down"
+
+[tasks.test]
+description = "Run behavior and authorization checks against an isolated database"
+depends = ["build"]
+run = "python scripts/resource_guard.py --report-dir .build/resource-reports --timeout 300 -- python tests/integration.py"
+
+[tasks."test:v"]
+description = "Check Web Push against RFC 8291 and test application security helpers"
+run = "python scripts/resource_guard.py --report-dir .build/resource-reports --timeout 600 -- python scripts/test_v.py"
+
+[tasks."push:keys"]
+description = "Create private Web Push signing keys once"
+run = "node scripts/push_keys.mjs"
+
+[tasks.backup]
+description = "Back up the database, uploads and push keys after stopping the app"
+run = "python scripts/backup.py"
+
+[tasks.format]
+description = "Format application V and browser code"
+run = ["python scripts/resource_guard.py --report-dir .build/resource-reports --timeout 120 -- .build/v/v fmt -w src", "node node_modules/prettier/bin/prettier.cjs --write 'public/*.{js,css,html}' 'scripts/*.mjs' '*.json'"]
+
+[tasks.bench]
+description = "Run a bounded local application benchmark"
+run = "python scripts/resource_guard.py --report-dir .build/resource-reports --timeout 120 -- python tests/benchmark.py"

@@ -1,0 +1,13 @@
+{
+    admin off
+    auto_https off
+}
+
+http://localhost:8088 {
+    bind 127.0.0.1
+    request_body {
+        max_size 17MB
+    }
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8080
+}

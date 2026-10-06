@@ -1,0 +1,12 @@
+{
+  "name": "vampfire-tooling",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "prettier": "3.9.9"
+  },
+  "scripts": {
+    "format": "prettier --write 'public/*.{js,css,html}' 'scripts/*.mjs' '*.json'",
+    "format:check": "prettier --check 'public/*.{js,css,html}' 'scripts/*.mjs' '*.json'"
+  }
+}
