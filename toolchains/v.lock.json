@@ -1,5 +1,5 @@
 {
-  "v": {"url": "https://github.com/vlang/v.git", "commit": "f34e871bcd41f00baf13b32dc5d70af099893ad5", "branch_at_pin": "master"},
+  "v": {"url": "https://github.com/vlang/v.git", "commit": "1b4ecb9c05d4a09be1e12eff5725bca45494fdea", "branch_at_pin": "master"},
   "vc": {"url": "https://github.com/vlang/vc.git", "commit": "475a2bd7ec4bed7061721816afb46580c4fe0a5b"},
   "tcc": {"url": "https://github.com/vlang/tccbin.git", "commit": "d6e7ac1b1bcc98aed734a6ecbfa8509f24606c74", "branch": "thirdparty-linux-amd64"},
   "sqlite": {"url": "https://sqlite.org/2026/sqlite-amalgamation-3530400.zip", "version": "3.53.4", "sha3_256": "628a44cfe82c66aed1ccbbe85a562d2e33ebe64b3288981ed76285612227934e"}

@@ -1,5 +1,16 @@
 # Browser checks
 
+The V main update to `1b4ecb9` was checked in local headless Chromium 153 with
+Playwright 1.63.0 after the collaborative preview host reported it was unavailable.
+Both apps passed sign-in, 40-message room views, history, and 13 search matches.
+V also delivered three messages between two browser users, including a 4 KiB
+Unicode message followed by a short message. WebSocket receipts and rendered
+messages were checked; no JavaScript errors or failed local responses occurred.
+[Updated V evidence](validation/20261006-main-1b4ecb9/vampfire-browser.json) ·
+[Rust evidence](validation/20261006-main-1b4ecb9/rust-browser.json).
+
+## Initial feature checks
+
 Checked in the collaborative Chromium browser on 2026-10-06, using fictional
 Alex Example and Casey Example accounts. Network requests exercised the running
 V server and real SQLite storage. Browser fixtures were kept separate from all

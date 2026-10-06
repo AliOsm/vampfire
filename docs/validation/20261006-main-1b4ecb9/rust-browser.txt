@@ -1,0 +1,3 @@
+Resource guard: 1536 MiB hard cap, no swap; stop at 1152 MiB or 300s
+Browser server ready on port 4390: rust
+{"app":"rust","browser":"153.0.8010.12","measured":false,"pageErrors":[],"badResponses":[],"websockets":2,"login":true,"roomMessages":40,"roomTitle":"All Talk","earlierFragmentMessages":40,"searchMatches":13,"passed":true}

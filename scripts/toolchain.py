@@ -18,7 +18,7 @@ def run(command, cwd=ROOT, **kwargs):
     subprocess.run(list(map(str, command)), cwd=cwd, check=True, **kwargs)
 
 
-def checkout(directory, pin):
+def checkout(directory, pin, update=False):
     if not (directory / '.git').exists():
         directory.mkdir(parents=True, exist_ok=True)
         run(['git', 'init', '-q', directory])
@@ -26,21 +26,28 @@ def checkout(directory, pin):
         run(['git', 'fetch', '-q', '--depth=1', 'origin', pin['commit']], cwd=directory)
         run(['git', 'checkout', '-q', '--detach', 'FETCH_HEAD'], cwd=directory)
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=directory, text=True).strip()
-    if head != pin['commit']:
-        raise SystemExit(f'Unexpected toolchain revision in {directory}: {head}')
     if subprocess.check_output(['git', 'diff', 'HEAD', '--'], cwd=directory):
         raise SystemExit(f'Toolchain source must remain unmodified: {directory}')
+    if head != pin['commit']:
+        if not update:
+            raise SystemExit(f'Unexpected toolchain revision in {directory}: {head}; run mise run setup.')
+        run(['git', 'fetch', '-q', '--depth=1', 'origin', pin['commit']], cwd=directory)
+        run(['git', 'checkout', '-q', '--detach', pin['commit']], cwd=directory)
 
 
 def main():
     if not os.environ.get('VAMPFIRE_RESOURCE_GUARD'):
         raise SystemExit('Use mise run setup for the bounded toolchain build.')
     for name, directory in [('v', VROOT), ('vc', VROOT / 'vc'), ('tcc', VROOT / 'thirdparty/tcc')]:
-        checkout(directory, PINS[name])
-    if not V.exists():
+        checkout(directory, PINS[name], update=True)
+    stamp = ROOT / '.build/v-bootstrap-commit'
+    if not V.exists() or not stamp.exists() or stamp.read_text().strip() != PINS['vc']['commit']:
+        temporary = VROOT / 'v.bootstrap.next'
         run(['gcc', '--param', 'ggc-min-expand=10', '--param', 'ggc-min-heapsize=16384',
-             '-DCUSTOM_DEFINE_v1_fallback', '-std=c99', '-w', '-o', V,
+             '-DCUSTOM_DEFINE_v1_fallback', '-std=c99', '-w', '-o', temporary,
              VROOT / 'vc/v.c', '-lm', '-lpthread'], cwd=VROOT)
+        temporary.replace(V)
+        stamp.write_text(PINS['vc']['commit'] + '\n')
     dest = VROOT / 'thirdparty/sqlite'
     if not (dest / 'sqlite3.c').exists():
         pin = PINS['sqlite']

@@ -152,4 +152,6 @@ exits after four minutes or when `.build/comparison/browser-stop` is created.
 Prefer the T3 preview tools. If their host is explicitly unavailable, `--check`
 uses `browser_check.cjs` with an installed Playwright module; `PLAYWRIGHT_MODULE`
 can specify its absolute path. This fallback and the server share the guard.
-It uses a fresh browser context and leaves the existing demo server untouched.
+It uses fresh browser contexts and leaves the existing demo server untouched.
+Alongside login/history/search, V's check sends short, long Unicode, and short
+messages between two users and verifies both WebSocket receipts and rendered text.

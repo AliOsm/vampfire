@@ -1,0 +1,35 @@
+Resource guard: 1536 MiB hard cap, no swap; stop at 1152 MiB or 300s
+test_audio_and_video_processing (__main__.Parity.test_audio_and_video_processing) ... ok
+test_backup_restore (__main__.Parity.test_backup_restore) ... ok
+test_bot_api (__main__.Parity.test_bot_api) ... ok
+test_bot_pagination_and_file_parameter (__main__.Parity.test_bot_pagination_and_file_parameter) ... ok
+test_bot_webhook_reply (__main__.Parity.test_bot_webhook_reply) ... ok
+test_concurrent_message_idempotency (__main__.Parity.test_concurrent_message_idempotency) ... ok
+test_direct_singleton_and_immutability (__main__.Parity.test_direct_singleton_and_immutability) ... ok
+test_directory_pagination (__main__.Parity.test_directory_pagination) ... ok
+test_involvement (__main__.Parity.test_involvement) ... ok
+test_job_retry_limit (__main__.Parity.test_job_retry_limit) ... ok
+test_link_preview_lifecycle (__main__.Parity.test_link_preview_lifecycle) ... ok
+test_media_thumbnail_and_avatar (__main__.Parity.test_media_thumbnail_and_avatar) ... ok
+test_messages_edits_replies_boosts_and_search (__main__.Parity.test_messages_edits_replies_boosts_and_search) ... ok
+test_open_and_private_membership (__main__.Parity.test_open_and_private_membership) ... ok
+test_pagination (__main__.Parity.test_pagination) ... ok
+test_private_url_unfurl_rejected (__main__.Parity.test_private_url_unfurl_rejected) ... ok
+test_profile_and_admin_permissions (__main__.Parity.test_profile_and_admin_permissions) ... ok
+test_pwa (__main__.Parity.test_pwa) ... ok
+test_realtime_presence_disconnect_and_directory (__main__.Parity.test_realtime_presence_disconnect_and_directory) ... ok
+test_realtime_typing_edits_and_unread (__main__.Parity.test_realtime_typing_edits_and_unread) ... ok
+test_rich_text_and_xss (__main__.Parity.test_rich_text_and_xss) ... ok
+test_room_creator_can_remove_themselves (__main__.Parity.test_room_creator_can_remove_themselves) ... ok
+test_search_history (__main__.Parity.test_search_history) ... ok
+test_setup_and_auth_boundaries (__main__.Parity.test_setup_and_auth_boundaries) ... ok
+test_shared_administration_preserves_existing_images (__main__.Parity.test_shared_administration_preserves_existing_images) ... ok
+test_transfer_and_session_revocation (__main__.Parity.test_transfer_and_session_revocation) ... ok
+test_upload_permissions_ranges_and_mime (__main__.Parity.test_upload_permissions_ranges_and_mime) ... ok
+test_z_moderation_and_invitation_rotation (__main__.Parity.test_z_moderation_and_invitation_rotation) ... ok
+test_zz_rate_limit_does_not_trust_client_headers (__main__.Parity.test_zz_rate_limit_does_not_trust_client_headers) ... ok
+
+----------------------------------------------------------------------
+Ran 29 tests in 9.650s
+
+OK

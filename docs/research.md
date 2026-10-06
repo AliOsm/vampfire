@@ -6,7 +6,7 @@ Reference audit: 2026-10-06.
 | --- | --- |
 | basecamp/once-campfire | `32b4144b5206304fa8d4c67455a753e2d3c16635` |
 | basecamp/once-campfire-rust | `ccece30e8e160d8c3e05bf395ee55ee35962093b` |
-| vlang/v master | `f34e871bcd41f00baf13b32dc5d70af099893ad5` |
+| vlang/v master, refreshed after the initial audit | `1b4ecb9c05d4a09be1e12eff5725bca45494fdea` |
 
 The Rails source, not the Rust performance claims, defines feature behavior.
 The Rust port's `plans/rust-conversion.md`, `README.md`, and `parity/screens.yml`
@@ -40,5 +40,6 @@ or Action Cable wire compatibility. Vampfire uses its own schema and protocol.
 Existing Campfire installations would need an explicit migration tool; none is
 assumed by the requested rewrite. No changes are made to V or its libraries.
 
-Performance results will be measured locally after correctness checks. Published
-Rust numbers were measured on different hardware and are not a Vampfire baseline.
+[Performance results](rust-vs-v.md) use the upstream comparison workloads on this
+host after correctness checks. Published Rust numbers from different hardware
+are not used as a Vampfire baseline.

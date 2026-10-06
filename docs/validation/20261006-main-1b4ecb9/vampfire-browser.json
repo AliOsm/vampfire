@@ -1,0 +1,16 @@
+{
+  "app": "vampfire",
+  "browser": "153.0.8010.12",
+  "measured": false,
+  "pageErrors": [],
+  "badResponses": [],
+  "websockets": 3,
+  "login": true,
+  "roomMessages": 40,
+  "roomTitle": "(2) All Talk · 37signals",
+  "messagesAfterHistory": 80,
+  "liveMessages": 3,
+  "liveUnicode": true,
+  "searchMatches": 13,
+  "passed": true
+}

@@ -1,18 +1,24 @@
 # Toolchain record
 
-Pinned on 2026-10-06. `toolchains/v.lock.json` records immutable upstream revisions:
+Updated to the latest V main available on 2026-10-06 at 19:59 UTC.
+`toolchains/v.lock.json` records immutable upstream revisions:
 
 | Component | Revision / version |
 | --- | --- |
-| V main (`master`) library/source checkout | `f34e871bcd41f00baf13b32dc5d70af099893ad5` |
+| V main (`master`) library/source checkout | `1b4ecb9c05d4a09be1e12eff5725bca45494fdea` |
 | Official portable `vc` bootstrap snapshot | `475a2bd7ec4bed7061721816afb46580c4fe0a5b` |
 | Bootstrap compiler's reported version | `V 0.5.2 02d8026` |
 | Official Linux x86-64 TCC dependency bundle | `d6e7ac1b1bcc98aed734a6ecbfa8509f24606c74` |
 | SQLite amalgamation | 3.53.4; publisher SHA3-256 checked |
 | Build C compiler on this machine | GCC 15.2.0 |
 
-`mise run setup` checks out these sources and compiles the official `vc/v.c` with
-GCC. The app uses the new compiler frontend, Boehm GC, current-main `veb`, SQLite,
+This includes the merged [reactor input borrowing](https://github.com/vlang/v/pull/29719)
+and [mailbox payload reuse](https://github.com/vlang/v/pull/29722) optimizations.
+
+`mise run setup` updates clean local toolchain checkouts to these pins and compiles
+the official `vc/v.c` with GCC. It refuses to overwrite source changes and rebuilds
+the bootstrap when its pinned snapshot changes. The app uses the new compiler
+frontend, Boehm GC, current-main `veb`, SQLite,
 cryptography, and WebSocket modules. The V checkout and bootstrap sources have no
 local modifications. No upstream changes or pull requests were made.
 
@@ -22,6 +28,10 @@ commit. Two bounded attempts to self-host current main stopped proactively at
 requiring more than 4 GiB before C compilation. Disabling unrelated backends did
 not make it fit. No suitable official Linux binary for this exact revision was
 available in the release/artifact queries performed during development.
+
+The official `vc` snapshot was still the October 4 revision when main was updated.
+The previous self-hosting attempts used main `f34e871`; they were not repeated
+with the higher-memory requirement unchanged.
 
 This is a material limitation against the requested exact-main toolchain. The
 portable bootstrap successfully builds and tests the app against current-main

@@ -13,23 +13,29 @@ const base = 'http://127.0.0.1:4390';
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   const report = { app, browser: browser.version(), measured: false, pageErrors: [], badResponses: [], websockets: 0 };
-  page.on('pageerror', error => report.pageErrors.push(error.message));
-  page.on('response', response => {
-    if (response.url().startsWith(base) && response.status() >= 400)
-      report.badResponses.push({ status: response.status(), url: response.url() });
-  });
-  page.on('websocket', () => report.websockets++);
+  function observe(target) {
+    target.on('pageerror', error => report.pageErrors.push(error.message));
+    target.on('response', response => {
+      if (response.url().startsWith(base) && response.status() >= 400)
+        report.badResponses.push({ status: response.status(), url: response.url() });
+    });
+    target.on('websocket', () => report.websockets++);
+  }
+  observe(page);
+  async function signIn(target, email) {
+    await target.goto(base);
+    await target.locator('input[type=email]').fill(email);
+    await target.locator('input[type=password]').fill(labels['passwords.all']);
+    await target.locator('button[type=submit]').first().click();
+    await target.locator('input[type=password]').waitFor({ state: 'hidden' });
+  }
   const selector = app === 'rust' ? '[data-message-id]' : 'article.message[data-id]';
   const attribute = app === 'rust' ? 'data-message-id' : 'data-id';
   async function ids() {
     return page.locator(selector).evaluateAll((nodes, attr) => [...new Set(nodes.map(n => n.getAttribute(attr)))], attribute);
   }
   try {
-    await page.goto(base);
-    await page.locator('input[type=email]').fill(labels['emails.david']);
-    await page.locator('input[type=password]').fill(labels['passwords.all']);
-    await page.locator('button[type=submit]').first().click();
-    await page.locator('input[type=password]').waitFor({ state: 'hidden' });
+    await signIn(page, labels['emails.david']);
     report.login = true;
     await page.goto(`${base}/rooms/${labels['rooms.watercooler']}`);
     await page.waitForFunction(sel => document.querySelectorAll(sel).length >= 40, selector);
@@ -41,6 +47,31 @@ const base = 'http://127.0.0.1:4390';
       await page.locator('[data-action=older]').click();
       await page.waitForFunction(() => document.querySelectorAll('article.message').length > 40);
       report.messagesAfterHistory = (await ids()).length;
+      const recipientContext = await browser.newContext();
+      const recipient = await recipientContext.newPage();
+      observe(recipient);
+      const received = new Set();
+      recipient.on('websocket', socket => socket.on('framereceived', ({ payload }) => {
+        const event = JSON.parse(payload.toString());
+        if (event.kind === 'message') received.add(event.message.plain);
+      }));
+      await signIn(recipient, labels['emails.jason']);
+      await recipient.goto(`${base}/rooms/${labels['rooms.watercooler']}`);
+      await recipient.waitForFunction(() => document.querySelector('#presence')?.textContent.includes('here now'));
+      const messages = [
+        'Main update: short payload',
+        'Main update: unicode مرحباً 👋 ' + 'x'.repeat(4096),
+        'Main update: reused mailbox',
+      ];
+      for (const message of messages) {
+        await page.locator('#editor').fill(message);
+        await page.locator('#composer button[type=submit]').click();
+        await recipient.locator('article.message').filter({ hasText: message }).waitFor();
+        assert.ok(received.has(message), 'Recipient must receive the message over WebSocket');
+      }
+      report.liveMessages = messages.length;
+      report.liveUnicode = true;
+      await recipientContext.close();
     } else {
       // The upstream earlier-page route is a Turbo fragment; inspect it in the browser.
       await page.goto(`${base}/rooms/${labels['rooms.watercooler']}/messages?before=${labels['messages.busy_060']}`);
