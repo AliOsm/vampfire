@@ -32,6 +32,22 @@ struct Notification {
 	path  string
 }
 
+fn validate_push_config(public_key string, private_key string) ! {
+	if public_key == '' && private_key == '' { return }
+	private_bytes := base64.url_decode(private_key)
+	public_bytes := base64.url_decode(public_key)
+	if private_bytes.len != 32 || public_bytes.len != 65 {
+		return error('Configure both valid VAPID keys, or leave both empty.')
+	}
+	mut private := ecdsa.new_key_from_seed(private_bytes, nid: .prime256v1)!
+	defer { private.free() }
+	mut public := private.public_key()!
+	defer { public.free() }
+	if public.uncompressed_bytes()! != public_bytes {
+		return error('The VAPID key pair does not match.')
+	}
+}
+
 fn validate_subscription(input PushInput) ! {
 	u := validate_url(input.endpoint, true)!
 	if u.scheme != 'https' || u.port() !in ['', '443'] {
@@ -116,12 +132,9 @@ fn notify_message(app &App, db &Database, id int) ! {
 	active := app.active_users(room_id)
 	recipients := notification_recipients(db, room_id, r.get_int('user_id'), id, active)!
 	if recipients.len == 0 { return }
-	db.exec('BEGIN IMMEDIATE')!
-	defer { db.exec('ROLLBACK') or {} }
 	for subscription in recipients {
 		queue_job(db, 'push', json.encode(PushJob{ message_id: id, subscription_id: subscription.get_int('id') }))!
 	}
-	db.exec('COMMIT')!
 }
 
 struct PushJob {

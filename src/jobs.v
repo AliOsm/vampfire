@@ -59,7 +59,13 @@ fn run_next_job(app &App, db &Database, kind string) !bool {
 	if rows.len == 0 { return false }
 	r := rows[0]
 	id := r.get_int('id')
+	// Expansion only writes local rows. Commit child jobs and removal of their
+	// parent together so a restart cannot expand the same notification twice.
+	transactional := kind == 'notify'
+	if transactional { db.exec('BEGIN IMMEDIATE')! }
+	defer { if transactional { db.exec('ROLLBACK') or {} } }
 	execute_job(app, db, r.get_string('kind'), r.get_string('payload')) or {
+		if transactional { db.exec('ROLLBACK')! }
 		attempts := r.get_int('attempts')
 		execute(db, 'UPDATE jobs SET locked_at=0,error=?,available_at=? WHERE id=?', err.msg().limit(500), (time.now().unix() + if attempts >= 5 {
 			86400
@@ -69,6 +75,7 @@ fn run_next_job(app &App, db &Database, kind string) !bool {
 		return true
 	}
 	execute(db, 'DELETE FROM jobs WHERE id=?', id.str())!
+	if transactional { db.exec('COMMIT')! }
 	return true
 }
 
@@ -251,7 +258,13 @@ fn fetch_preview(app &App, db &Database, url string, owner_id int, with_image bo
 	if response.body.len > 1024 * 1024 {
 		return error_with_code('This page is too large to preview.', 422)
 	}
-	dom := html.parse(response.body)
+	// Open Graph metadata belongs to the document head. Do not construct a DOM
+	// for a remote page's entire body or unbounded nesting/attribute lists.
+	mut head := response.body[..if response.body.len < 65536 { response.body.len } else { 65536 }]
+	if end := head.to_lower().index('</head>') { head = head[..end + 7] }
+	if head.count('<') > 1000 { return LinkPreview{ url: url } }
+	check_markup_complexity(head) or { return LinkPreview{ url: url } }
+	dom := html.parse(head)
 	mut title := ''
 	mut description := ''
 	mut image_url := ''

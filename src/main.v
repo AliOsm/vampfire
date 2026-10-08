@@ -55,6 +55,7 @@ fn main() {
 		push_public:     os.getenv('VAPID_PUBLIC_KEY')
 		push_private:    os.getenv('VAPID_PRIVATE_KEY')
 	}
+	validate_push_config(app.push_public, app.push_private) or { panic(err) }
 	app.use(handler: request_headers)
 	app.mount_static_folder_at('public', '/assets') or { panic(err) }
 	app.cache_assets() or { panic(err) }

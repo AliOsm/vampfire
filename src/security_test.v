@@ -26,6 +26,19 @@ fn test_jose_p256_signature_width() ! {
 	}
 }
 
+fn test_push_configuration_is_validated_once_at_startup() ! {
+	validate_push_config('', '')!
+	if _ := validate_push_config('invalid', '') {
+		assert false
+	}
+	bytes := []u8{len: 32, init: 1}
+	mut private := ecdsa.new_key_from_seed(bytes, nid: .prime256v1)!
+	defer { private.free() }
+	mut public := private.public_key()!
+	defer { public.free() }
+	validate_push_config(base64.url_encode(public.uncompressed_bytes()!), base64.url_encode(bytes))!
+}
+
 fn test_outbound_network_policy() {
 	for ip in ['127.0.0.1', '10.1.1.1', '192.168.1.1', '169.254.169.254', '100.70.1.1', '172.16.0.1',
 		'0.0.0.0', '224.0.0.1', '192.0.2.3', '198.51.100.1', '203.0.113.5', '1.2.3.999', '1.2.3.-1',
