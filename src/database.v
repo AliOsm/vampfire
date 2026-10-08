@@ -52,7 +52,7 @@ fn load_account(db &Database) !Account {
 }
 
 fn load_user(db &Database, id int) !User {
-	return user_from(one(db, 'SELECT * FROM users WHERE id=?', id.str())!)
+	return user_from_values(one(db, 'SELECT id,name,email,bio,role,status,avatar_id FROM users WHERE id=?', id.str())!.vals)
 }
 
 fn require_admin(user User) ! {
@@ -98,4 +98,8 @@ fn sql_placeholders(count int) string { return []string{len: count, init: '?'}.j
 
 fn require_membership(db &Database, user_id int, room_id int) ! {
 	one(db, 'SELECT 1 FROM memberships WHERE room_id=? AND user_id=?', room_id.str(), user_id.str())!
+}
+
+fn user_from_values(values []string) User {
+	return User{ id: values[0].int(), name: values[1], email: values[2], bio: values[3], role: values[4], status: values[5], avatar_id: values[6].int() }
 }

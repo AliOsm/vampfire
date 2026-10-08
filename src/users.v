@@ -15,8 +15,8 @@ fn list_users(mut ctx Context, _app &App, db &Database) !string {
 	page := ctx.query['page'].int()
 	if page < 0 || page > 100000 { return error_with_code('Invalid directory page.', 422) }
 	mut users := []User{}
-	for r in query(db, "SELECT * FROM users WHERE (status='active' OR ?='administrator') AND name LIKE ? ORDER BY lower(name),id LIMIT 500 OFFSET ?", ctx.user.role, '%${q}%', (page * 500).str())! {
-		mut user := user_from(r)
+	for r in query(db, "SELECT id,name,email,bio,role,status,avatar_id FROM users WHERE (status='active' OR ?='administrator') AND name LIKE ? ORDER BY lower(name),id LIMIT 500 OFFSET ?", ctx.user.role, '%${q}%', (page * 500).str())! {
+		mut user := user_from_values(r.vals)
 		if ctx.user.role != 'administrator' && user.id != ctx.user.id { user.email = '' }
 		users << user
 	}

@@ -60,10 +60,9 @@ fn create_room(mut ctx Context, app &App, db &Database) !string {
 	now := time.now().unix_milli().str()
 	db.exec('BEGIN IMMEDIATE')!
 	defer { db.exec('ROLLBACK') or {} }
-	for id in members {
-		if !exists(db, "SELECT 1 FROM users WHERE id=? AND status='active'", id.str()) {
-			return error_with_code('One of those people is no longer available.', 422)
-		}
+	member_ids := members.map(it.str())
+	if query(db, "SELECT id FROM users WHERE status='active' AND id IN (" + sql_placeholders(members.len) + ')', ...member_ids)!.len != members.len {
+		return error_with_code('One of those people is no longer available.', 422)
 	}
 	if input.kind == 'direct' {
 		rows := query(db, 'SELECT id FROM rooms WHERE direct_key=?', key)!
@@ -82,13 +81,12 @@ fn create_room(mut ctx Context, app &App, db &Database) !string {
 	if input.kind == 'open' {
 		execute(db, "INSERT INTO memberships(room_id,user_id) SELECT ?,id FROM users WHERE status='active'", id.str())!
 	} else {
-		for member in members {
-			execute(db, 'INSERT INTO memberships(room_id,user_id,involvement) VALUES(?,?,?)', id.str(), member.str(), if input.kind == 'direct' {
-				'everything'
-			} else {
-				'mentions'
-			})!
-		}
+		involvement := if input.kind == 'direct' { 'everything' } else { 'mentions' }
+		execute(db, 'INSERT INTO memberships(room_id,user_id,involvement) SELECT ?,id,? FROM users WHERE id IN (' + sql_placeholders(members.len) + ')', ...[
+			id.str(),
+			involvement,
+			...member_ids,
+		])!
 	}
 	db.exec('COMMIT')!
 	app.publish_room(db, id, Event{ kind: 'rooms', room_id: id })
@@ -120,20 +118,19 @@ fn update_room(mut ctx Context, app &App, db &Database) !string {
 			if r.get_int('id') !in members { members << r.get_int('id') }
 		}
 	} else {
-		for id in input.members {
-			if id !in members && exists(db, "SELECT 1 FROM users WHERE id=? AND status='active'", id.str()) {
-				members << id
-			}
+		if input.members.len > 500 { return error_with_code('Select at most 500 people.', 422) }
+		if input.members.len > 0 {
+			members = query(db, "SELECT id FROM users WHERE status='active' AND id IN (" + sql_placeholders(input.members.len) + ')', ...input.members.map(it.str()))!.map(it.vals[0].int())
 		}
 	}
 	execute(db, 'UPDATE rooms SET name=?,kind=?,updated_at=? WHERE id=?', input.name.trim_space(), input.kind, time.now().unix_milli().str(), room.id.str())!
-	for id in members {
-		execute(db, 'INSERT OR IGNORE INTO memberships(room_id,user_id) VALUES(?,?)', room.id.str(), id.str())!
-	}
-	for id in room.members {
-		if id !in members {
-			execute(db, 'DELETE FROM memberships WHERE room_id=? AND user_id=?', room.id.str(), id.str())!
-		}
+	if members.len > 0 {
+		placeholders := sql_placeholders(members.len)
+		values := [room.id.str(), ...members.map(it.str())]
+		execute(db, 'INSERT OR IGNORE INTO memberships(room_id,user_id) SELECT ?,id FROM users WHERE id IN (' + placeholders + ')', ...values)!
+		execute(db, 'DELETE FROM memberships WHERE room_id=? AND user_id NOT IN (' + placeholders + ')', ...values)!
+	} else {
+		execute(db, 'DELETE FROM memberships WHERE room_id=?', room.id.str())!
 	}
 	db.exec('COMMIT')!
 	for id in room.members { if id !in members { app.disconnect_user(id) } }
@@ -186,8 +183,8 @@ pub fn (app &App) room_read(mut ctx Context, id int) veb.Result {
 }
 
 fn mark_read(mut ctx Context, app &App, db &Database) !string {
-	room_for(db, ctx.user.id, ctx.entity_id)!
-	execute(db, 'UPDATE memberships SET read_id=coalesce((SELECT max(id) FROM messages WHERE room_id=?),0) WHERE room_id=? AND user_id=?', ctx.entity_id.str(), ctx.entity_id.str(), ctx.user.id.str())!
-	app.deliver([ctx.user.id], Event{ kind: 'read', room_id: ctx.entity_id })
+	require_membership(db, ctx.user.id, ctx.entity_id)!
+	changed := query(db, 'UPDATE memberships SET read_id=coalesce((SELECT max(id) FROM messages WHERE room_id=?),0) WHERE room_id=? AND user_id=? AND read_id<coalesce((SELECT max(id) FROM messages WHERE room_id=?),0) RETURNING user_id', ctx.entity_id.str(), ctx.entity_id.str(), ctx.user.id.str(), ctx.entity_id.str())!
+	if changed.len > 0 { app.deliver([ctx.user.id], Event{ kind: 'read', room_id: ctx.entity_id }) }
 	return json.encode(Success{})
 }

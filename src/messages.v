@@ -264,7 +264,7 @@ fn search_messages(mut ctx Context, _app &App, db &Database) !string {
 	if q.len > 200 { return error_with_code('Use a shorter search.', 422) }
 	mut messages := []ChatMessage{}
 	if q != '' {
-		terms := q.split_any(' \t\r\n').filter(it != '').map('"' + it.replace('"', '""') + '"').join(' ')
+		terms := q.split_any(' \t\r\n\x00').filter(it != '').map('"' + it.replace('"', '""') + '"').join(' ')
 		if terms != '' {
 			rows := search_rows(db, ctx.user.id, terms, ctx.query['room'].int(), ctx.query['before'].int())!
 			messages = messages_from(db, rows)!

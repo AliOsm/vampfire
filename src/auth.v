@@ -16,14 +16,14 @@ fn digest(value string) string { return sha256.sum(value.bytes()).hex() }
 fn authenticate(mut ctx Context, db &Database) ! {
 	raw := ctx.get_cookie('vampfire_session') or { return error_with_code('Please sign in.', 401) }
 	if raw.len != 64 { return error_with_code('Please sign in.', 401) }
-	row := one(db, "SELECT u.*,s.csrf,s.token,s.active_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires_at>? AND u.status='active' AND u.role!='bot'", digest(raw), time.now().unix().str()) or {
+	row := one(db, "SELECT u.id,u.name,u.email,u.bio,u.role,u.status,u.avatar_id,s.csrf,s.token,s.active_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires_at>? AND u.status='active' AND u.role!='bot'", digest(raw), time.now().unix().str()) or {
 		return error_with_code('Please sign in.', 401)
 	}
-	ctx.user = user_from(row)
-	ctx.session_hash = row.get_string('token')
-	ctx.csrf = row.get_string('csrf')
-	if row.get_string('active_at').i64() < time.now().unix() - 600 {
-		execute(db, 'UPDATE sessions SET active_at=? WHERE token=?', time.now().unix().str(), ctx.session_hash)!
+	ctx.user = user_from_values(row.vals)
+	ctx.session_hash = row.vals[8]
+	ctx.csrf = row.vals[7]
+	if row.vals[9].i64() < time.now().unix() - 600 {
+		execute(db, 'UPDATE sessions SET active_at=? WHERE token=? AND active_at<?', time.now().unix().str(), ctx.session_hash, (time.now().unix() - 600).str())!
 	}
 }
 
