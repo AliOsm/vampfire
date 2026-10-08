@@ -45,6 +45,8 @@ fn respond(mut ctx Context, app &App, handler Handler, public bool) veb.Result {
 	ctx.client_ip = request_ip(ctx, app)
 	ctx.secure_cookie = app.base_url.starts_with('https://')
 	db := app.database.session()
+	use_cache := cacheable(ctx, public)
+	generation := if use_cache { db.generation() or { u64(0) } } else { u64(0) }
 	if !public {
 		authenticate(mut ctx, db) or { return ctx.problem(err) }
 		if ctx.user.role == 'bot' {
@@ -56,7 +58,25 @@ fn respond(mut ctx Context, app &App, handler Handler, public bool) veb.Result {
 			}
 		}
 	}
+	mut cache := app.responses
+	key := ctx.session_hash + ':' + ctx.req.url
+	if use_cache && generation > 0 {
+		if entry := cache.get(key, generation) {
+			// Recheck after fresh authentication. External SQLite writes, revoked
+			// memberships and expired sessions cannot reuse an older response.
+			if (db.generation() or { u64(0) }) == generation {
+				return send_cached(mut ctx, entry)
+			}
+		}
+	}
 	result := handler(mut ctx, app, db) or { return ctx.problem(err) }
+	if use_cache {
+		entry := encoded_response(result)
+		if generation > 0 && (db.generation() or { u64(0) }) == generation {
+			cache.put(key, generation, entry)
+		}
+		return send_cached(mut ctx, entry)
+	}
 	return ctx.send_response_to_client('application/json', result)
 }
 

@@ -4,7 +4,7 @@ import json2 as json
 import time
 import veb
 
-@['/api/rooms']
+@['/api/rooms'; get; head]
 pub fn (app &App) rooms_index(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, list_rooms, false)
 }

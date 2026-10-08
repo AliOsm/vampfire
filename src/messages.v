@@ -60,7 +60,7 @@ fn message_by_id(db &Database, user_id int, id int) !ChatMessage {
 	return messages_from(db, rows)![0]
 }
 
-@['/api/rooms/:id/messages']
+@['/api/rooms/:id/messages'; get; head]
 pub fn (app &App) messages_index(mut ctx Context, id int) veb.Result {
 	ctx.entity_id = id
 	return respond(mut ctx, app, list_messages, false)
@@ -249,7 +249,7 @@ fn delete_boost(mut ctx Context, app &App, db &Database) !string {
 	return json.encode(Success{})
 }
 
-@['/api/search']
+@['/api/search'; get; head]
 pub fn (app &App) searches_index(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, search_messages, false)
 }

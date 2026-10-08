@@ -55,6 +55,39 @@ class Parity(unittest.TestCase):
         visitor.delete('/api/session')
         visitor.get('/api/rooms', expected=401)
 
+
+    def test_authenticated_cache_invalidation_and_encodings(self):
+        room = self.bob.room(members=[self.cara.user['id']])
+        message = self.bob.message(room['id'], 'cache content ' * 80)
+        path = f'/api/rooms/{room["id"]}/messages'
+        expected, headers = self.cara.request('GET', path)
+        repeated, repeated_headers = self.cara.request('GET', path)
+        self.assertEqual(repeated, expected)
+        self.assertEqual(repeated_headers['ETag'], headers['ETag'])
+        self.cara.request('GET', path, expected=304, headers={'If-None-Match': headers['ETag']})
+        empty, head = self.cara.request('HEAD', path)
+        self.assertEqual(empty, b'')
+        self.assertGreater(int(head['Content-Length']), 0)
+        zipped, zip_headers = self.cara.request('GET', path, headers={'Accept-Encoding': 'gzip'})
+        self.assertEqual(zipped, expected)
+        self.assertEqual(zip_headers['Content-Encoding'], 'gzip')
+        _, identity = self.cara.request('GET', path, headers={'Accept-Encoding': '*;q=1, gzip;q=0'})
+        self.assertNotIn('Content-Encoding', identity)
+        with closing(sqlite3.connect(self.server.data / 'vampfire.sqlite3')) as db:
+            db.execute('UPDATE messages SET body=?,plain=? WHERE id=?', ('External edit', 'External edit', message['id']))
+            db.commit()
+        changed, changed_headers = self.cara.request('GET', path, headers={'If-None-Match': headers['ETag']})
+        self.assertEqual(changed[0]['plain'], 'External edit')
+        self.assertNotEqual(changed_headers['ETag'], headers['ETag'])
+        self.admin.get(path, expected=404)
+        with closing(sqlite3.connect(self.server.data / 'vampfire.sqlite3')) as db:
+            db.execute('DELETE FROM memberships WHERE room_id=? AND user_id=?', (room['id'], self.cara.user['id']))
+            db.commit()
+        self.cara.get(path, expected=404)
+        _, css_headers = self.bob.request('GET', '/assets/app.css', headers={'Accept-Encoding': 'gzip'})
+        self.assertEqual(css_headers['Content-Encoding'], 'gzip')
+        self.bob.request('GET', '/assets/app.css', expected=304, headers={'If-None-Match': css_headers['ETag']})
+
     def test_open_and_private_membership(self):
         room = self.bob.room(kind='open')
         self.assertIn(room['id'], [r['id'] for r in self.cara.get('/api/rooms')])

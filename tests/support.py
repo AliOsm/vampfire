@@ -35,7 +35,10 @@ class Client:
             data = response.read()
             response_headers = dict(response.getheaders())
             content_type = response.getheader('Content-Type', '')
-            result = json.loads(data) if 'application/json' in content_type else data
+            if response.getheader('Content-Encoding') == 'gzip':
+                import gzip
+                data = gzip.decompress(data)
+            result = json.loads(data) if data and 'application/json' in content_type else data
             if response.status != expected:
                 raise AssertionError(f'{method} {path}: expected {expected}, got {response.status}: {str(result)[:800]}')
             cookie = response.getheader('Set-Cookie')

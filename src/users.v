@@ -4,7 +4,7 @@ import crypto.bcrypt
 import json2 as json
 import veb
 
-@['/api/users']
+@['/api/users'; get; head]
 pub fn (app &App) users_index(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, list_users, false)
 }

@@ -13,6 +13,8 @@ pub struct App {
 	database        &Database
 	commands        chan Command
 	hub             &Hub
+	responses       &ResponseCache
+	shell           CachedResponse
 	data_dir        string
 	base_url        string
 	trusted_proxies []string
@@ -21,6 +23,7 @@ pub struct App {
 	push_private    string
 pub mut:
 	reactor &websocket.Reactor = unsafe { nil }
+	assets  map[string]CachedAsset
 }
 
 fn main() {
@@ -34,6 +37,8 @@ fn main() {
 		database:        db
 		commands:        chan Command{cap: 1024}
 		hub:             &Hub{}
+		responses:       &ResponseCache{}
+		shell:           encoded_response($embed_file('../public/index.html').to_string())
 		data_dir:        os.real_path(data)
 		base_url:        os.getenv_opt('BASE_URL') or { 'http://localhost:${port}' }
 		trusted_proxies: os.getenv('TRUSTED_PROXIES').split(',').map(it.trim_space()).filter(it != '')
@@ -43,6 +48,7 @@ fn main() {
 	}
 	app.use(handler: request_headers)
 	app.mount_static_folder_at('public', '/assets') or { panic(err) }
+	app.cache_assets() or { panic(err) }
 	app.reactor = websocket.new_reactor(
 		max_message_bytes: 4096
 		max_connections:   2000
@@ -65,9 +71,9 @@ fn main() {
 	) or { panic(err) }
 }
 
-@['/']
+@['/'; get; head]
 pub fn (app &App) index(mut ctx Context) veb.Result {
-	return ctx.html($embed_file('../public/index.html').to_string())
+	return send_representation(mut ctx, app.shell, 'text/html', 'no-cache')
 }
 
 @['/rooms/:id']
