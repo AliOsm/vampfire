@@ -144,11 +144,28 @@ export function renderSidebar() {
     );
 }
 
-export async function refreshRooms() {
-  state.rooms = await api("/api/rooms");
-  if (state.room)
-    state.room = state.rooms.find((room) => room.id === state.room.id) || null;
-  if ($("#sidebar")) renderSidebar();
+let roomsRefresh = null;
+let roomsDirty = false;
+
+export function refreshRooms() {
+  roomsDirty = true;
+  if (roomsRefresh) return roomsRefresh;
+  const userId = state.user.id;
+  roomsRefresh = (async () => {
+    do {
+      roomsDirty = false;
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      const rooms = await api("/api/rooms");
+      if (state.user.id !== userId) return;
+      state.rooms = rooms;
+      if (state.room)
+        state.room = rooms.find((room) => room.id === state.room.id) || null;
+      if ($("#sidebar")) renderSidebar();
+    } while (roomsDirty);
+  })().finally(() => {
+    roomsRefresh = null;
+  });
+  return roomsRefresh;
 }
 
 export async function openRoom(id, at = 0) {
@@ -673,11 +690,28 @@ function removeMessage(id) {
   } else renderMessages();
 }
 
+const readRequests = new Map();
+
 export async function markRead() {
   if (!state.room || document.hidden || state.view !== "chat") return;
-  await api(`/api/rooms/${state.room.id}/read`, { method: "POST" });
-  state.room.unread = 0;
-  renderSidebar();
+  const roomId = state.room.id;
+  const current = readRequests.get(roomId);
+  if (current) {
+    current.dirty = true;
+    return current.promise;
+  }
+  const entry = { dirty: false, promise: null };
+  entry.promise = (async () => {
+    do {
+      entry.dirty = false;
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      await api(`/api/rooms/${roomId}/read`, { method: "POST" });
+      if (state.room?.id === roomId) state.room.unread = 0;
+      if ($("#sidebar")) renderSidebar();
+    } while (entry.dirty && state.room?.id === roomId && !document.hidden);
+  })().finally(() => readRequests.delete(roomId));
+  readRequests.set(roomId, entry);
+  return entry.promise;
 }
 
 export function connectSocket() {
@@ -690,6 +724,7 @@ export function connectSocket() {
     if (socket.readyState === WebSocket.OPEN) socket.send('{"type":"ping"}');
   }, 20000);
   socket.addEventListener("open", () => {
+    if (state.socket !== socket) return;
     if ($("#connection")) $("#connection").hidden = true;
     updatePresence();
     const roomId = state.room?.id;
@@ -708,6 +743,7 @@ export function connectSocket() {
       )
         .then((messages) => {
           if (
+            state.socket === socket &&
             request === currentRequest &&
             state.room?.id === roomId &&
             state.view === "chat"
@@ -730,6 +766,7 @@ export function connectSocket() {
       .catch(() => {});
   });
   socket.addEventListener("message", (event) => {
+    if (state.socket !== socket) return;
     let data;
     try {
       data = JSON.parse(event.data);
@@ -738,11 +775,14 @@ export function connectSocket() {
     }
     if (data.kind === "message" || data.kind === "message_updated") {
       upsertMessage(data.message, data.kind === "message");
-      if (data.room_id === state.room?.id) markRead().catch(() => {});
-      refreshRooms().catch(() => {});
+      if (data.kind === "message") {
+        if (data.room_id === state.room?.id) markRead().catch(() => {});
+        refreshRooms().catch(() => {});
+      }
     }
     if (data.kind === "message_deleted") {
       removeMessage(data.message_id);
+      refreshRooms().catch(() => {});
     }
     if (data.kind === "users")
       loadUsers()
