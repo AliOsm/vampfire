@@ -93,3 +93,9 @@ fn queue_job(db &Database, kind string, payload string) ! {
 	execute(db, 'INSERT INTO jobs(kind,payload,available_at) VALUES(?,?,?)', kind, payload, time.now().unix().str())!
 	db.wake_job(kind)
 }
+
+fn sql_placeholders(count int) string { return []string{len: count, init: '?'}.join(',') }
+
+fn require_membership(db &Database, user_id int, room_id int) ! {
+	one(db, 'SELECT 1 FROM memberships WHERE room_id=? AND user_id=?', room_id.str(), user_id.str())!
+}

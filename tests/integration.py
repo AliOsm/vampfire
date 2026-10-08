@@ -339,6 +339,24 @@ class Parity(unittest.TestCase):
         self.bob.delete('/api/search')
         self.assertEqual(self.bob.get('/api/search')['recent'], [])
 
+    def test_search_sparse_memberships_and_newest_order(self):
+        visible = self.bob.room(members=[self.cara.user['id']])
+        hidden = self.bob.room()
+        first = self.bob.message(visible['id'], 'sparsekeyword')
+        with closing(sqlite3.connect(self.server.data / 'vampfire.sqlite3')) as db:
+            for n in range(1100):
+                mid = db.execute('INSERT INTO messages(room_id,user_id,client_id,body,plain,created_at,updated_at) VALUES(?,?,?,?,?,0,0)',
+                                 (hidden['id'], self.bob.user['id'], f'sparse-{n}', 'sparsekeyword', 'sparsekeyword')).lastrowid
+                db.execute('INSERT INTO message_fts(rowid,body) VALUES(?,?)', (mid, 'sparsekeyword'))
+            db.commit()
+        self.assertEqual([m['id'] for m in self.cara.get('/api/search?q=sparsekeyword')['messages']], [first['id']])
+        newest = self.bob.get('/api/search?q=sparsekeyword')['messages']
+        self.assertEqual(len(newest), 40)
+        self.assertEqual([m['id'] for m in newest], sorted([m['id'] for m in newest], reverse=True))
+        previous = self.bob.get(f'/api/search?q=sparsekeyword&before={newest[-1]["id"]}')['messages']
+        self.assertTrue(all(m['id'] < newest[-1]['id'] for m in previous))
+        self.assertEqual([m['id'] for m in self.bob.get(f'/api/search?q=sparsekeyword&room={visible["id"]}')['messages']], [first['id']])
+
     def test_bot_api(self):
         bot = self.admin.post('/api/bots', {'name': 'Build Bot'}, expected=201)
         room = self.admin.room(kind='closed', members=[bot['user']['id']])

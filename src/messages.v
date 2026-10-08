@@ -5,46 +5,48 @@ import json2 as json
 import time
 import veb
 
-const message_select = 'SELECT m.*,u.name,u.avatar_id,a.id AS attachment_id,a.name AS filename,a.mime,a.size,a.thumb,a.width,a.height,a.duration FROM messages m JOIN users u ON u.id=m.user_id LEFT JOIN uploads a ON a.id=m.upload_id '
+// Keep this column order together with messages_from: hot rows use positions.
+const message_select = 'SELECT m.id,m.room_id,m.user_id,u.name,u.avatar_id,m.client_id,m.body,m.plain,m.reply_id,m.created_at,m.updated_at,a.id,a.name,a.mime,a.size,a.thumb,a.width,a.height,a.duration FROM messages m JOIN users u ON u.id=m.user_id LEFT JOIN uploads a ON a.id=m.upload_id '
 
 fn messages_from(db &Database, rows []sqlite.Row) ![]ChatMessage {
-	mut messages := []ChatMessage{}
+	mut messages := []ChatMessage{cap: rows.len}
 	mut indices := map[int]int{}
-	mut ids := []string{}
+	mut ids := []string{cap: rows.len}
 	for r in rows {
-		id := r.get_int('id')
+		id := r.vals[0].int()
 		indices[id] = messages.len
 		ids << id.str()
 		messages << ChatMessage{
 			id:         id
-			room_id:    r.get_int('room_id')
-			user_id:    r.get_int('user_id')
-			name:       r.get_string('name')
-			avatar_id:  r.get_int('avatar_id')
-			client_id:  r.get_string('client_id')
-			body:       r.get_string('body')
-			plain:      r.get_string('plain')
-			reply_id:   r.get_int('reply_id')
-			created_at: r.get_string('created_at').i64()
-			updated_at: r.get_string('updated_at').i64()
+			room_id:    r.vals[1].int()
+			user_id:    r.vals[2].int()
+			name:       r.vals[3]
+			avatar_id:  r.vals[4].int()
+			client_id:  r.vals[5]
+			body:       r.vals[6]
+			plain:      r.vals[7]
+			reply_id:   r.vals[8].int()
+			created_at: r.vals[9].i64()
+			updated_at: r.vals[10].i64()
 			attachment: Upload{
-				id:       r.get_int('attachment_id')
-				name:     r.get_string('filename')
-				mime:     r.get_string('mime')
-				size:     r.get_string('size').i64()
-				thumb:    r.get_string('thumb')
-				width:    r.get_int('width')
-				height:   r.get_int('height')
-				duration: r.get_string('duration').f64()
+				id:       r.vals[11].int()
+				name:     r.vals[12]
+				mime:     r.vals[13]
+				size:     r.vals[14].i64()
+				thumb:    r.vals[15]
+				width:    r.vals[16].int()
+				height:   r.vals[17].int()
+				duration: r.vals[18].f64()
 			}
 		}
 	}
 	if ids.len > 0 {
-		for r in query(db, 'SELECT * FROM link_previews WHERE message_id IN (${ids.join(',')})')! {
+		placeholders := sql_placeholders(ids.len)
+		for r in query(db, 'SELECT message_id,url,title,description,image_id FROM link_previews WHERE message_id IN (${placeholders})', ...ids)! {
 			messages[indices[r.get_int('message_id')]].preview = LinkPreview{ url: r.get_string('url'), title: r.get_string('title'), description: r.get_string('description'), image_id: r.get_int('image_id') }
 		}
-		// IDs originate from SQLite integer columns; user input is always bound.
-		for r in query(db, 'SELECT b.*,u.name FROM boosts b JOIN users u ON u.id=b.user_id WHERE b.message_id IN (${ids.join(',')}) ORDER BY b.id')! {
+		// Parameterize the batch so consecutive pages reuse prepared statements.
+		for r in query(db, 'SELECT b.id,b.message_id,b.user_id,b.content,u.name FROM boosts b JOIN users u ON u.id=b.user_id WHERE b.message_id IN (${placeholders}) ORDER BY b.id', ...ids)! {
 			idx := indices[r.get_int('message_id')]
 			messages[idx].boosts << Boost{ id: r.get_int('id'), user_id: r.get_int('user_id'), name: r.get_string('name'), content: r.get_string('content') }
 		}
@@ -65,7 +67,7 @@ pub fn (app &App) messages_index(mut ctx Context, id int) veb.Result {
 }
 
 fn list_messages(mut ctx Context, _app &App, db &Database) !string {
-	room_for(db, ctx.user.id, ctx.entity_id)!
+	require_membership(db, ctx.user.id, ctx.entity_id)!
 	before := ctx.query['before'].int()
 	after := ctx.query['after'].int()
 	around := ctx.query['around'].int()
@@ -112,10 +114,10 @@ fn save_message(db &Database, user User, room_id int, input MessageInput) !ChatM
 	}
 	if input.client_id.len > 100 { return error_with_code('Invalid message identifier.', 422) }
 	client_id := if input.client_id == '' { token() } else { input.client_id }
-	now := time.now().unix_milli().str()
 	db.exec('BEGIN IMMEDIATE')!
 	defer { db.exec('ROLLBACK') or {} }
-	room := room_for(db, user.id, room_id)!
+	room := one(db, 'SELECT r.kind FROM rooms r JOIN memberships k ON k.room_id=r.id WHERE r.id=? AND k.user_id=?', room_id.str(), user.id.str())!
+	now := time.now().unix_milli().str()
 	old := query(db, 'SELECT id,room_id FROM messages WHERE user_id=? AND client_id=?', user.id.str(), client_id)!
 	if old.len > 0 {
 		if old[0].get_int('room_id') != room_id {
@@ -138,20 +140,21 @@ fn save_message(db &Database, user User, room_id int, input MessageInput) !ChatM
 	id := int(db.last_insert_rowid())
 	execute(db, 'INSERT INTO message_fts(rowid,body) VALUES(?,?)', id.str(), plain)!
 	for uid in content.mentions {
-		if uid in room.members {
-			execute(db, 'INSERT INTO mentions(message_id,user_id) VALUES(?,?)', id.str(), uid.str())!
-		}
+		execute(db, 'INSERT INTO mentions(message_id,user_id) SELECT ?,user_id FROM memberships WHERE room_id=? AND user_id=?', id.str(), room_id.str(), uid.str())!
 	}
 	execute(db, 'UPDATE rooms SET updated_at=? WHERE id=?', now, room_id.str())!
 	execute(db, 'UPDATE memberships SET read_id=? WHERE room_id=? AND user_id=?', id.str(), room_id.str(), user.id.str())!
 	queue_job(db, 'notify', id.str())!
 	if content.html.contains('href=') { queue_job(db, 'preview', id.str())! }
 	if user.role != 'bot' {
-		for bot in query(db, "SELECT u.id FROM users u JOIN memberships k ON k.user_id=u.id WHERE k.room_id=? AND u.role='bot' AND u.status='active' AND u.webhook!='' AND (?='direct' OR u.id IN(SELECT user_id FROM mentions WHERE message_id=?))", room_id.str(), room.kind, id.str())! {
+		for bot in query(db, "SELECT u.id FROM users u JOIN memberships k ON k.user_id=u.id WHERE k.room_id=? AND u.role='bot' AND u.status='active' AND u.webhook!='' AND (?='direct' OR u.id IN(SELECT user_id FROM mentions WHERE message_id=?))", room_id.str(), room.vals[0], id.str())! {
 			queue_job(db, 'webhook', json.encode(WebhookJob{ message_id: id, bot_id: bot.get_int('id') }))!
 		}
 	}
 	db.exec('COMMIT')!
+	if input.upload_id == 0 {
+		return ChatMessage{ id: id, room_id: room_id, user_id: user.id, name: user.name, avatar_id: user.avatar_id, client_id: client_id, body: content.html, plain: plain, reply_id: input.reply_id, created_at: now.i64(), updated_at: now.i64() }
+	}
 	return message_by_id(db, user.id, id)
 }
 
@@ -263,7 +266,7 @@ fn search_messages(mut ctx Context, _app &App, db &Database) !string {
 	if q != '' {
 		terms := q.split_any(' \t\r\n').filter(it != '').map('"' + it.replace('"', '""') + '"').join(' ')
 		if terms != '' {
-			rows := query(db, message_select + 'JOIN message_fts f ON f.rowid=m.id JOIN memberships k ON k.room_id=m.room_id WHERE message_fts MATCH ? AND k.user_id=? AND (CAST(? AS INTEGER)=0 OR m.room_id=?) AND (CAST(? AS INTEGER)=0 OR m.id<?) ORDER BY m.id DESC LIMIT 40', terms, ctx.user.id.str(), ctx.query['room'].int().str(), ctx.query['room'].int().str(), ctx.query['before'].int().str(), ctx.query['before'].int().str())!
+			rows := search_rows(db, ctx.user.id, terms, ctx.query['room'].int(), ctx.query['before'].int())!
 			messages = messages_from(db, rows)!
 		}
 	}
@@ -301,4 +304,25 @@ pub fn (app &App) searches_clear(mut ctx Context) veb.Result {
 fn clear_search(mut ctx Context, _app &App, db &Database) !string {
 	execute(db, 'DELETE FROM searches WHERE user_id=?', ctx.user.id.str())!
 	return json.encode(Success{})
+}
+
+// Probe a bounded newest-first FTS window without sorting all global matches.
+// A sparse membership set falls back to the room-first plan (Rust b1d751b).
+fn search_rows(db &Database, user_id int, terms string, room_id int, before int) ![]sqlite.Row {
+	mut params := [user_id.str(), terms]
+	suffix := if before > 0 { ' AND f.rowid<?' } else { '' }
+	if before > 0 { params << before.str() }
+	candidates := query(db, 'SELECT f.rowid,m.room_id,k.user_id FROM message_fts f JOIN messages m ON m.id=f.rowid LEFT JOIN memberships k ON k.room_id=m.room_id AND k.user_id=? WHERE message_fts MATCH ?' + suffix + ' ORDER BY f.rowid DESC LIMIT 1000', ...params)!
+	mut ids := []string{cap: 40}
+	for row in candidates {
+		if row.vals[2] != '' && (room_id == 0 || row.vals[1].int() == room_id) {
+			ids << row.vals[0]
+			if ids.len == 40 { break }
+		}
+	}
+	if ids.len == 40 || candidates.len < 1000 {
+		if ids.len == 0 { return []sqlite.Row{} }
+		return query(db, message_select + 'WHERE m.id IN (' + sql_placeholders(ids.len) + ') ORDER BY m.id DESC', ...ids)
+	}
+	return query(db, message_select + 'JOIN message_fts f ON f.rowid=m.id JOIN memberships k ON k.room_id=m.room_id WHERE message_fts MATCH ? AND k.user_id=? AND (CAST(? AS INTEGER)=0 OR m.room_id=?) AND (CAST(? AS INTEGER)=0 OR m.id<?) ORDER BY m.id DESC LIMIT 40', terms, user_id.str(), room_id.str(), room_id.str(), before.str(), before.str())
 }
