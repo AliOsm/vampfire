@@ -23,6 +23,8 @@ The runner prints its result directory. Run `python benchmarks/reference/report.
 DIRECTORY --export DESTINATION` to retain JSON/CSV evidence outside `.build`.
 Summaries retain errors, missing cases, sample counts, ranges and repetition
 medians; percentiles are not pooled across runs.
+Fan-out metric distributions include only fully successful repetitions; the
+recorded/successful counts and all raw failures remain in the report.
 
 Preparation uses Rust `2e392fe`, verification `8c75704`, and the original Rails
 fixture revision `90b3300`. Checkouts live under `.build/comparison`. Official

@@ -5,10 +5,11 @@ import os
 from pathlib import Path
 import signal
 import sqlite3
+import subprocess
 import time
 
-from run import App, LOADGEN, REFERENCE, ROOT, lg, process_stats, validation, write
-from report import fanout_errors
+from run import App, LOADGEN, REFERENCE, ROOT, RUST_IMAGE, WORK, lg, process_stats, validation, write
+from report import fanout_passed
 import json
 
 
@@ -34,10 +35,7 @@ def measure(name, repetition, case, directory, count):
                      "--tput-secs", 15, "--posters", 4, "--latency-msgs", 30,
                      "--interval-ms", 200, file=f"cable-{count}")
             report["cable"] = row
-            report["passed"] = (row["ready"] == count and row["failed"] == 0
-                                and fanout_errors(row) == 0
-                                and row["latency"]["complete"] == row["latency"]["messages"]
-                                and row["throughput"]["complete"] == row["throughput"]["posted"])
+            report["passed"] = row["clients"] == count and fanout_passed(row)
         elif case == "upload":
             args = ["--room", app.labels["rooms.hq"], "--file",
                     REFERENCE / "reference/test/fixtures/files/black_hole.jpg", "--reps", 5]
@@ -46,7 +44,8 @@ def measure(name, repetition, case, directory, count):
                 report["upload_upstream"] = lg(app, "upload", *auth, *args, file="upload-upstream")
                 args += ["--actual-thumbnail", 1]
             report["upload"] = lg(app, "upload", *auth, *args, file="upload")
-            report["passed"] = all(r.get("thumb_status") == 200 for r in report["upload"]["runs"])
+            report["passed"] = all(r.get("thumb_status") == 200 and r.get("pixels_decoded")
+                                   for r in report["upload"]["runs"])
     except Exception as error:
         report["error"] = str(error)
         report["passed"] = False
@@ -85,6 +84,9 @@ def main():
     write(args.out / "settings.json", {
         **vars(args), "out": str(args.out), "loadgen_sha256": hashlib.sha256(LOADGEN.read_bytes()).hexdigest(),
         "vampfire_build": json.loads((ROOT / '.build/vampfire.build.json').read_text()),
+        "rust_image": RUST_IMAGE,
+        "rust_commit": subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=REFERENCE, text=True).strip(),
+        "verification_commit": subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=WORK/'verification', text=True).strip(),
         "protocol_diagnostics": "Up to five WebSocket read errors/close frames are logged.",
         "scope": "Fresh isolated seed for each scenario; kept separate from the full-suite medians.",
     })

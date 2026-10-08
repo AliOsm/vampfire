@@ -78,6 +78,12 @@ def fanout_errors(row):
     return row.get("post_errors", row["latency"].get("post_errors", 0) + row["throughput"].get("post_errors", 0))
 
 
+def fanout_passed(row):
+    return (row["ready"] == row["clients"] and row["failed"] == 0 and fanout_errors(row) == 0
+            and row["latency"]["messages"] == row["latency"]["complete"]
+            and row["throughput"]["posted"] == row["throughput"]["complete"])
+
+
 def summarize(root):
     environment = json.loads((root / "environment.json").read_text())
     if environment.get("smoke"):
@@ -146,23 +152,23 @@ def summarize(root):
             summary["mixed"].append(row)
         for count in client_counts:
             rows = [c for c in all_cable if c["clients"] == count]
+            valid_rows = [c for c in rows if fanout_passed(c)]
             row = {
                 "app": name, "clients": count, "recorded_repetitions": len(rows),
-                "successful_repetitions": sum(
-                    c["ready"] == count and c["failed"] == 0 and fanout_errors(c) == 0
-                    and c["latency"]["messages"] == c["latency"]["complete"]
-                    and c["throughput"]["posted"] == c["throughput"]["complete"] for c in rows),
+                "successful_repetitions": len(valid_rows),
+                "metric_scope": "Only repetitions with complete delivery and no failures",
             }
             for field in ("delivered_msgs_per_sec", "frames_per_sec"):
-                row[field] = distribution(c["throughput"][field] for c in rows)
+                row[field] = distribution(c["throughput"][field] for c in valid_rows)
             for field in ("p50_ms", "p90_ms", "p99_ms"):
-                row["all_clients_" + field] = distribution(c["latency"]["all_clients"].get(field) for c in rows)
-                row["per_client_" + field] = distribution(c["latency"]["per_client"].get(field) for c in rows)
+                row["all_clients_" + field] = distribution(c["latency"]["all_clients"].get(field) for c in valid_rows)
+                row["per_client_" + field] = distribution(c["latency"]["per_client"].get(field) for c in valid_rows)
             row["server_peak_rss_mib"] = distribution(
-                c["resources"]["server_sampled_peak_rss_bytes"] / 1024**2 for c in rows)
+                c["resources"]["server_sampled_peak_rss_bytes"] / 1024**2 for c in valid_rows)
             for field in ("client_cpu_percent", "server_cpu_percent", "host_unaccounted_cpu_percent"):
-                row[field] = distribution(c["resources"].get(field + "_one_core") for c in rows)
-            idle = [connected_rss(root / f"{name}-{r['rep']}", count) for r in runs]
+                row[field] = distribution(c["resources"].get(field + "_one_core") for c in valid_rows)
+            idle = [connected_rss(root / f"{name}-{r['rep']}", count) for r in runs
+                    if any(c["clients"] == count and fanout_passed(c) for c in r["cable"])]
             row["connected_rss_mib"] = distribution(v for v in idle if v is not None)
             summary["cable"].append(row)
         summary["process"][name] = {
