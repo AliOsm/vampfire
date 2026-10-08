@@ -54,7 +54,7 @@ fn main() {
 	) or { panic(err) }
 	spawn app.reactor.run()
 	spawn socket_worker(app)
-	spawn job_worker(app)
+	start_jobs(app)
 	println('Vampfire: ${app.base_url}')
 	veb.run_at[App, Context](mut app,
 		host:                    os.getenv_opt('BIND') or { '127.0.0.1' }

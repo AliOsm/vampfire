@@ -114,27 +114,55 @@ fn notify_message(app &App, db &Database, id int) ! {
 	r := one(db, 'SELECT m.*,u.name,r.name AS room_name,r.kind FROM messages m JOIN users u ON u.id=m.user_id JOIN rooms r ON r.id=m.room_id WHERE m.id=?', id.str()) or { return }
 	room_id := r.get_int('room_id')
 	active := app.active_users(room_id)
-	notification := Notification{
-		title: if r.get_string('kind') == 'direct' {
-			r.get_string('name')
-		} else {
-			r.get_string('room_name')
-		}
-		body:  if r.get_string('kind') == 'direct' {
-			r.get_string('plain')
-		} else {
-			r.get_string('name') + ': ' + r.get_string('plain')
-		}
-		path:  '/rooms/${room_id}?at=${id}'
+	recipients := notification_recipients(db, room_id, r.get_int('user_id'), id, active)!
+	if recipients.len == 0 { return }
+	db.exec('BEGIN IMMEDIATE')!
+	defer { db.exec('ROLLBACK') or {} }
+	for subscription in recipients {
+		queue_job(db, 'push', json.encode(PushJob{ message_id: id, subscription_id: subscription.get_int('id') }))!
 	}
-	for subscription in notification_recipients(db, room_id, r.get_int('user_id'), id, active)! {
+	db.exec('COMMIT')!
+}
+
+struct PushJob {
+	message_id      int
+	subscription_id int
+}
+
+fn deliver_notification(app &App, db &Database, job PushJob) ! {
+	r := one(db, 'SELECT m.*,u.name,r.name AS room_name,r.kind FROM messages m JOIN users u ON u.id=m.user_id JOIN rooms r ON r.id=m.room_id WHERE m.id=?', job.message_id.str()) or { return }
+	// Permissions, sessions and involvement may have changed while this job waited.
+	rows := notification_candidates(db, r.get_int('room_id'), r.get_int('user_id'), job.message_id, app.active_users(r.get_int('room_id')), job.subscription_id)!
+	for subscription in rows {
+		if subscription.get_int('id') != job.subscription_id { continue }
+		notification := Notification{
+			title: if r.get_string('kind') == 'direct' {
+				r.get_string('name')
+			} else {
+				r.get_string('room_name')
+			}
+			body:  if r.get_string('kind') == 'direct' {
+				r.get_string('plain')
+			} else {
+				r.get_string('name') + ': ' + r.get_string('plain')
+			}
+			path:  '/rooms/${r.get_int('room_id')}?at=${job.message_id}'
+		}
 		send_push(app, db, subscription, notification)!
+		return
 	}
 }
 
 fn notification_recipients(db &Database, room_id int, sender_id int, message_id int, present []int) ![]sqlite.Row {
+	return notification_candidates(db, room_id, sender_id, message_id, present, 0)
+}
+
+fn notification_candidates(db &Database, room_id int, sender_id int, message_id int, present []int, subscription_id int) ![]sqlite.Row {
 	mut recipients := []sqlite.Row{}
-	for row in query(db, "SELECT s.* FROM subscriptions s JOIN sessions device ON device.token=s.session_token JOIN memberships k ON k.user_id=s.user_id JOIN users u ON u.id=s.user_id WHERE k.room_id=? AND s.user_id!=? AND u.status='active' AND device.expires_at>? AND (k.involvement='everything' OR (k.involvement='mentions' AND s.user_id IN(SELECT user_id FROM mentions WHERE message_id=?)))", room_id.str(), sender_id.str(), time.now().unix().str(), message_id.str())! {
+	mut params := [room_id.str(), sender_id.str(), time.now().unix().str(), message_id.str()]
+	suffix := if subscription_id > 0 { ' AND s.id=?' } else { '' }
+	if subscription_id > 0 { params << subscription_id.str() }
+	for row in query(db, "SELECT s.* FROM subscriptions s JOIN sessions device ON device.token=s.session_token JOIN memberships k ON k.user_id=s.user_id JOIN users u ON u.id=s.user_id WHERE k.room_id=? AND s.user_id!=? AND u.status='active' AND device.expires_at>? AND (k.involvement='everything' OR (k.involvement='mentions' AND s.user_id IN(SELECT user_id FROM mentions WHERE message_id=?)))" + suffix, ...params)! {
 		if row.get_int('user_id') !in present { recipients << row }
 	}
 	return recipients

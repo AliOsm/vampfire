@@ -91,4 +91,5 @@ fn require_room_admin(user User, room Room) ! {
 
 fn queue_job(db &Database, kind string, payload string) ! {
 	execute(db, 'INSERT INTO jobs(kind,payload,available_at) VALUES(?,?,?)', kind, payload, time.now().unix().str())!
+	db.wake_job(kind)
 }

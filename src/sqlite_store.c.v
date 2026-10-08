@@ -47,6 +47,7 @@ struct DatabasePool {
 	checkpoints chan bool
 	checkpoint  &SqlConnection
 	observer    &SqlConnection
+	job_wakes   map[string]chan bool
 mut:
 	checkpoint_mu sync.Mutex
 	observer_mu   sync.Mutex
@@ -62,6 +63,7 @@ struct Database {
 mut:
 	transaction &SqlConnection = unsafe { nil }
 	last_id     i64
+	job_kinds   []string
 }
 
 fn open_database(directory string) !&Database {
@@ -74,6 +76,14 @@ fn open_database(directory string) !&Database {
 		checkpoints: chan bool{cap: 1}
 		checkpoint:  connect_sqlite(path, false)!
 		observer:    connect_sqlite(path, true)!
+		job_wakes:   {
+			'media':     chan bool{cap: 1}
+			'notify':    chan bool{cap: 1}
+			'preview':   chan bool{cap: 1}
+			'push_test': chan bool{cap: 1}
+			'webhook':   chan bool{cap: 2}
+			'push':      chan bool{cap: 2}
+		}
 	}
 	for _ in 0 .. 4 { pool.readers <- connect_sqlite(path, true)! }
 	C.sqlite3_wal_hook(writer.handle, record_wal_size, writer)
@@ -229,9 +239,30 @@ fn (db &Database) exec(statement string) ![]sqlite.Row {
 		session.transaction = unsafe { nil }
 		db.pool.finish_write(mut conn)
 		db.pool.writer <- conn
+		kinds := session.job_kinds.clone()
+		session.job_kinds.clear()
+		if command == 'COMMIT' {
+			for kind in kinds { db.wake_job(kind) }
+		}
 		return rows
 	}
 	return query(db, statement)
+}
+
+fn (db &Database) wake_job(kind string) {
+	mut session := unsafe { &Database(db) }
+	if session.transaction != unsafe { nil } {
+		if kind !in session.job_kinds { session.job_kinds << kind }
+		return
+	}
+	if wake := db.pool.job_wakes[kind] {
+		select {
+			wake <- true {
+			}
+			else {
+			}
+		}
+	}
 }
 
 fn (db &Database) q_int(statement string) !int { return query(db, statement)![0].vals[0].int() }

@@ -7,31 +7,60 @@ import os
 import time
 import veb
 
-fn job_worker(app &App) {
+fn start_jobs(app &App) {
 	db := app.database.session()
 	execute(db, 'UPDATE jobs SET locked_at=0 WHERE locked_at>0') or { eprintln(err) }
-	mut next_maintenance := i64(0)
+	// Keep external services and media from blocking each other. Media remains
+	// single-worker because its subprocess has a separate bounded memory budget.
+	for kind in ['media', 'notify', 'preview', 'push_test'] { spawn job_worker(app, kind) }
+	for _ in 0 .. 2 {
+		spawn job_worker(app, 'webhook')
+		spawn job_worker(app, 'push')
+	}
+	spawn maintenance_worker(app)
+}
+
+fn maintenance_worker(app &App) {
+	db := app.database.session()
 	for {
-		if time.now().unix() >= next_maintenance {
-			maintain_store(app, db) or { eprintln('Maintenance: ${err}') }
-			next_maintenance = time.now().unix() + 3600
-		}
-		worked := run_next_job(app, db) or {
-			eprintln('Job worker: ${err}')
-			false
-		}
-		if !worked { time.sleep(250 * time.millisecond) }
+		maintain_store(app, db) or { eprintln('Maintenance: ${err}') }
+		time.sleep(3600 * time.second)
 	}
 }
 
-fn run_next_job(app &App, db &Database) !bool {
-	rows := query(db, 'SELECT * FROM jobs WHERE available_at<=? AND locked_at=0 AND attempts<5 ORDER BY id LIMIT 1', time.now().unix().str())!
+fn job_worker(app &App, kind string) {
+	db := app.database.session()
+	wake := db.pool.job_wakes[kind] or { return }
+	for {
+		worked := run_next_job(app, db, kind) or {
+			eprintln('Job worker: ${err}')
+			false
+		}
+		if !worked {
+			// A commit wakes the right workers immediately; the timeout catches
+			// retries becoming due and work inserted by an external SQLite client.
+			select {
+				_ := <-wake {
+				}
+				1 * time.second {
+				}
+			}
+		}
+	}
+}
+
+fn run_next_job(app &App, db &Database, kind string) !bool {
+	// Claim atomically: two workers must never execute the same queued attempt.
+	// A read probe avoids a no-op write/commit on every idle poll.
+	if !exists(db, 'SELECT 1 FROM jobs WHERE kind=? AND locked_at=0 AND attempts<5 AND available_at<=? LIMIT 1', kind, time.now().unix().str()) {
+		return false
+	}
+	rows := query(db, 'UPDATE jobs SET locked_at=?,attempts=attempts+1 WHERE id=(SELECT id FROM jobs WHERE kind=? AND locked_at=0 AND attempts<5 AND available_at<=? ORDER BY id LIMIT 1) AND locked_at=0 RETURNING *', time.now().unix().str(), kind, time.now().unix().str())!
 	if rows.len == 0 { return false }
 	r := rows[0]
 	id := r.get_int('id')
-	execute(db, 'UPDATE jobs SET locked_at=?,attempts=attempts+1 WHERE id=?', time.now().unix().str(), id.str())!
 	execute_job(app, db, r.get_string('kind'), r.get_string('payload')) or {
-		attempts := r.get_int('attempts') + 1
+		attempts := r.get_int('attempts')
 		execute(db, 'UPDATE jobs SET locked_at=0,error=?,available_at=? WHERE id=?', err.msg().limit(500), (time.now().unix() + if attempts >= 5 {
 			86400
 		} else {
@@ -66,6 +95,7 @@ fn execute_job(app &App, db &Database, kind string, payload string) ! {
 		'media' { process_media(app, db, payload.int())! }
 		'webhook' { deliver_webhook(app, db, json.decode[WebhookJob](payload)!)! }
 		'notify' { notify_message(app, db, payload.int())! }
+		'push' { deliver_notification(app, db, json.decode[PushJob](payload)!)! }
 		'push_test' { test_push(app, db, payload.int())! }
 		'preview' { preview_message(app, db, payload.int())! }
 		else { return error('Unknown job kind.') }

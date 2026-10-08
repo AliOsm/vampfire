@@ -362,6 +362,53 @@ class Parity(unittest.TestCase):
         self.assertEqual(len({message['id'] for message in messages}), 1)
         self.assertEqual(len(self.bob.get(f'/api/rooms/{room["id"]}/messages')), 1)
 
+    def test_slow_webhook_does_not_block_media_or_duplicate_claims(self):
+        entered, release = threading.Event(), threading.Event()
+        delivered = queue.Queue()
+
+        class Webhook(BaseHTTPRequestHandler):
+            def do_POST(handler):
+                payload = json.loads(handler.rfile.read(int(handler.headers['Content-Length'])))
+                delivered.put(payload['message']['id'])
+                entered.set()
+                release.wait(8)
+                handler.send_response(204)
+                handler.end_headers()
+
+            def log_message(handler, *_):
+                pass
+
+        remote = ThreadingHTTPServer(('127.0.0.1', 0), Webhook)
+        thread = threading.Thread(target=remote.serve_forever, daemon=True)
+        thread.start()
+        try:
+            bot = self.admin.post('/api/bots', {'name': 'Slow worker bot', 'webhook': f'http://127.0.0.1:{remote.server_port}/'}, expected=201)
+            room = self.bob.room(kind='direct', members=[bot['user']['id']])
+            first = self.bob.message(room['id'], 'Held webhook')
+            self.assertTrue(entered.wait(3))
+            image = self.bob.upload('independent.png', (ROOT / 'public/app-icon.png').read_bytes(), 'image/png')
+            until = time.monotonic() + 4
+            while time.monotonic() < until:
+                with closing(sqlite3.connect(self.server.data / 'vampfire.sqlite3')) as db:
+                    if db.execute('SELECT thumb FROM uploads WHERE id=?', (image['id'],)).fetchone()[0]:
+                        break
+                time.sleep(.025)
+            else:
+                self.fail('Media processing waited for an unrelated webhook')
+            release.set()
+            expected = {first['id']}
+            for n in range(8):
+                expected.add(self.bob.message(room['id'], f'Atomic claim {n}')['id'])
+            received = [delivered.get(timeout=5) for _ in expected]
+            self.assertEqual(set(received), expected)
+            self.assertEqual(len(received), len(set(received)))
+            self.admin.patch(f'/api/bots/{bot["user"]["id"]}', {'name': 'Slow worker bot', 'webhook': ''})
+        finally:
+            release.set()
+            remote.shutdown()
+            remote.server_close()
+            thread.join(timeout=2)
+
     def test_bot_pagination_and_file_parameter(self):
         bot = self.admin.post('/api/bots', {'name': 'File Bot'}, expected=201)
         room = self.bob.room(members=[bot['user']['id']])
@@ -463,7 +510,7 @@ class Parity(unittest.TestCase):
 
     def test_job_retry_limit(self):
         with closing(sqlite3.connect(self.server.data / 'vampfire.sqlite3')) as db:
-            job_id = db.execute("INSERT INTO jobs(kind,payload,attempts,available_at) VALUES('invalid-test-job','',4,0)").lastrowid
+            job_id = db.execute("INSERT INTO jobs(kind,payload,attempts,available_at) VALUES('push','{',4,0)").lastrowid
             db.commit()
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
@@ -472,7 +519,7 @@ class Parity(unittest.TestCase):
                     break
                 time.sleep(.03)
             self.assertEqual(attempts, 5)
-            self.assertIn('Unknown job kind', error)
+            self.assertTrue(error)
             db.execute('UPDATE jobs SET available_at=0 WHERE id=?', (job_id,))
             db.commit()
             time.sleep(.6)
