@@ -19,9 +19,10 @@ struct Event {
 }
 
 struct Peer {
-	client  &websocket.ReactorClient
-	user_id int
-	session string
+	client        &websocket.ReactorClient
+	user_id       int
+	session       string
+	reactor_index int
 mut:
 	room_id int
 	seen    i64
@@ -30,12 +31,13 @@ mut:
 @[heap]
 struct Hub {
 mut:
-	mu       sync.Mutex
-	peers    map[string]Peer
-	by_user  map[int][]string
-	by_room  map[int][]string
-	presence map[int][]int
+	mu             sync.Mutex
+	peers          map[string]Peer
+	by_user        map[int][]string
+	by_room        map[int][]string
+	presence       map[int][]int
 	close_failures int
+	reactor_peers  [reactor_workers]int
 }
 
 struct Command {
@@ -103,12 +105,18 @@ pub fn (mut app App) websocket_upgrade(mut ctx Context) veb.Result {
 	response := 'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n'
 	mut hub := app.hub
 	hub.mu.lock()
-	client := app.reactor.attach(mut ctx.conn, response) or {
+	mut reactor_index := 0
+	for index, count in hub.reactor_peers {
+		if count < hub.reactor_peers[reactor_index] { reactor_index = index }
+	}
+	mut reactor := app.reactors[reactor_index]
+	client := reactor.attach(mut ctx.conn, response) or {
 		hub.mu.unlock()
 		ctx.conn.close() or {}
 		return veb.no_result()
 	}
-	hub.peers[client.id] = Peer{ client: client, user_id: ctx.user.id, session: ctx.session_hash, seen: time.now().unix() }
+	hub.peers[client.id] = Peer{ client: client, user_id: ctx.user.id, session: ctx.session_hash, seen: time.now().unix(), reactor_index: reactor_index }
+	hub.reactor_peers[reactor_index]++
 	hub.by_user[ctx.user.id] << client.id
 	hub.mu.unlock()
 	return veb.no_result()
@@ -140,6 +148,7 @@ fn send_event(client &websocket.ReactorClient, text string) {
 // Caller owns hub.mu. Remove stale index entries as well as the peer.
 fn (mut hub Hub) remove(key string) {
 	if peer := hub.peers[key] {
+		hub.reactor_peers[peer.reactor_index]--
 		hub.by_user[peer.user_id] = hub.by_user[peer.user_id].filter(it != key)
 		if hub.by_user[peer.user_id].len == 0 { hub.by_user.delete(peer.user_id) }
 		if peer.room_id > 0 {

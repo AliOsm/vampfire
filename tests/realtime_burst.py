@@ -32,7 +32,13 @@ def main():
                 except Exception as error:
                     failures.append(str(error))
             assert not failures, failures[:10]
-            for n in range(3):
+            for n in range(4):
+                if n == 3:
+                    # Replace half the connections to exercise worker capacity
+                    # recovery and recipient indexes after uneven disconnects.
+                    for peer in peers[:500]:
+                        peer.close()
+                    peers = peers[500:] + list(pool.map(connect, range(500)))
                 message = user.message(1, f'Complete delivery {n}')
 
                 def receive(peer):
@@ -41,7 +47,7 @@ def main():
                     assert event['message']['plain'] == message['plain']
 
                 list(pool.map(receive, peers))
-        print(json.dumps({'connections': len(peers), 'complete_broadcasts': 3,
+        print(json.dumps({'connections': len(peers), 'replacements': 500, 'complete_broadcasts': 4,
             'seconds': round(time.monotonic() - started, 3)}))
     finally:
         for peer in peers:

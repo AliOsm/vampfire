@@ -6,6 +6,9 @@ import os
 import time
 import veb
 
+const reactor_workers = 4
+const websocket_capacity = 2000
+
 @[heap]
 pub struct App {
 	veb.StaticHandler
@@ -23,8 +26,8 @@ pub struct App {
 	push_public     string
 	push_private    string
 pub mut:
-	reactor &websocket.Reactor = unsafe { nil }
-	assets  map[string]CachedAsset
+	reactors []&websocket.Reactor
+	assets   map[string]CachedAsset
 }
 
 fn main() {
@@ -59,16 +62,23 @@ fn main() {
 	app.use(handler: request_headers)
 	app.mount_static_folder_at('public', '/assets') or { panic(err) }
 	app.cache_assets() or { panic(err) }
-	app.reactor = websocket.new_reactor(
-		max_message_bytes: 4096
-		max_connections:   2000
-		max_pending_bytes: 1024 * 1024
-		read_timeout:      70 * time.second
-		on_message:        socket_message
-		on_close:          socket_closed
-		user:              app
-	) or { panic(err) }
-	spawn app.reactor.run()
+	// Partition the original connection and mailbox budgets across workers.
+	// A broadcast can then drain on all server CPUs instead of one shared inbox.
+	for _ in 0 .. reactor_workers {
+		mut reactor := websocket.new_reactor(
+			max_message_bytes: 4096
+			max_connections:   websocket_capacity / reactor_workers
+			max_pending_bytes: 1024 * 1024
+			max_commands:      8192 / reactor_workers
+			max_command_bytes: 16 * 1024 * 1024 / reactor_workers
+			read_timeout:      70 * time.second
+			on_message:        socket_message
+			on_close:          socket_closed
+			user:              app
+		) or { panic(err) }
+		app.reactors << reactor
+		spawn reactor.run()
+	}
 	spawn socket_worker(app)
 	start_jobs(app)
 	println('Vampfire: ${app.base_url}')
