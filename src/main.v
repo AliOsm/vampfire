@@ -14,6 +14,7 @@ pub struct App {
 	commands        chan Command
 	hub             &Hub
 	responses       &ResponseCache
+	download_slots  chan bool
 	shell           CachedResponse
 	data_dir        string
 	base_url        string
@@ -27,6 +28,13 @@ pub mut:
 }
 
 fn main() {
+	if os.args.len == 4 && os.args[1] == 'thumbnail' {
+		thumbnail_image(os.args[2], os.args[3]) or {
+			eprintln(err)
+			exit(1)
+		}
+		return
+	}
 	data := os.getenv_opt('VAMPFIRE_DATA') or { '.data' }
 	mut db := open_database(data) or { panic(err) }
 	migrate(db) or { panic(err) }
@@ -38,6 +46,7 @@ fn main() {
 		commands:        chan Command{cap: 1024}
 		hub:             &Hub{}
 		responses:       &ResponseCache{}
+		download_slots:  chan bool{cap: 4}
 		shell:           encoded_response($embed_file('../public/index.html').to_string())
 		data_dir:        os.real_path(data)
 		base_url:        os.getenv_opt('BASE_URL') or { 'http://localhost:${port}' }

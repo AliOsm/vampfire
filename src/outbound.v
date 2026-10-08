@@ -65,7 +65,7 @@ fn pinned_address(u urllib.URL) !string {
 fn run_process(program string, args []string, timeout time.Duration) !string {
 	executable := os.find_abs_path_of_executable(program) or { return error('${program} is required. Run mise install.') }
 	// Decoders process untrusted media; bound each child independently of the server.
-	media := program in ['ffmpeg', 'ffprobe']
+	media := program in ['ffmpeg', 'ffprobe'] || program == os.executable()
 	mut process := os.new_process(if media {
 		os.find_abs_path_of_executable('prlimit')!
 	} else {
@@ -98,7 +98,7 @@ fn run_process(program string, args []string, timeout time.Duration) !string {
 			process.wait()
 			return error('External request or media operation exceeded its limit.')
 		}
-		time.sleep(10 * time.millisecond)
+		time.sleep(5 * time.millisecond)
 	}
 	process.wait()
 	output += process.stdout_slurp()

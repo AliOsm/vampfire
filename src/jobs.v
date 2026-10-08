@@ -109,6 +109,15 @@ fn process_media(app &App, db &Database, id int) ! {
 		return
 	}
 	input := os.join_path(app.data_dir, 'uploads', r.get_string('key'))
+	if mime in ['image/png', 'image/jpeg', 'image/gif'] {
+		thumb := r.get_string('key') + '.jpg'
+		if metadata := run_process(os.executable(), ['thumbnail', input,
+			os.join_path(app.data_dir, 'uploads', thumb)], 15 * time.second) {
+			info := json.decode[MediaInfo](metadata)!
+			record_media(app, db, id, thumb, info.streams[0].width, info.streams[0].height, '')!
+			return
+		}
+	}
 	metadata := run_process('ffprobe', ['-v', 'error', '-max_alloc', '33554432', '-protocol_whitelist',
 		'file,pipe', '-threads', '1', '-show_entries', 'stream=width,height:format=duration', '-of',
 		'json', input], 10 * time.second)!
@@ -127,7 +136,11 @@ fn process_media(app &App, db &Database, id int) ! {
 			'1', '-vf', "scale='min(1200,iw)':'min(800,ih)':force_original_aspect_ratio=decrease",
 			'-threads', '1', '-y', output], 30 * time.second)!
 	}
-	execute(db, 'UPDATE uploads SET thumb=?,width=?,height=?,duration=? WHERE id=?', thumb, width.str(), height.str(), info.format.duration, id.str())!
+	record_media(app, db, id, thumb, width, height, info.format.duration)!
+}
+
+fn record_media(app &App, db &Database, id int, thumb string, width int, height int, duration string) ! {
+	execute(db, 'UPDATE uploads SET thumb=?,width=?,height=?,duration=? WHERE id=?', thumb, width.str(), height.str(), duration, id.str())!
 	for row in query(db, 'SELECT id,user_id,room_id FROM messages WHERE upload_id=?', id.str())! {
 		message := message_by_id(db, row.get_int('user_id'), row.get_int('id')) or { continue }
 		app.publish_room(db, row.get_int('room_id'), Event{ kind: 'message_updated', room_id: row.get_int('room_id'), message: message })
