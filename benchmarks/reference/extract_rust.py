@@ -9,7 +9,7 @@ from run import ROOT, WORK, RUST_IMAGE
 
 def main():
     assert os.environ.get('VAMPFIRE_RESOURCE_GUARD')
-    destination=WORK/'rust-runtime'
+    destination=WORK/'rust-runtime-2e392fe'
     if (destination/'ready.json').exists():
         print('Official Rust runtime already extracted.');return
     destination.mkdir(parents=True,exist_ok=True)

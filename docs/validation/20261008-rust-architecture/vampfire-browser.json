@@ -1,0 +1,23 @@
+{
+  "app": "vampfire",
+  "browser": "153.0.8010.12",
+  "measured": false,
+  "pageErrors": [],
+  "badResponses": [],
+  "websockets": 5,
+  "login": true,
+  "roomMessages": 40,
+  "roomTitle": "(4) All Talk · 37signals",
+  "messagesAfterHistory": 80,
+  "liveMessages": 3,
+  "liveUnicode": true,
+  "draftPreservedDuringRefresh": true,
+  "historyReconnectAnchor": 55,
+  "replacedSocketIgnored": true,
+  "roomSwitchRace": true,
+  "thumbnailDecoded": true,
+  "originalDownload": true,
+  "mobileFits": true,
+  "searchMatches": 13,
+  "passed": true
+}

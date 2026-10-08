@@ -1,157 +1,117 @@
 # Reference Campfire benchmark
 
-Uses [`basecamp/once-campfire-rust`'s `bench/run`](https://github.com/basecamp/once-campfire-rust/blob/ccece30e8e160d8c3e05bf395ee55ee35962093b/bench/run),
-its Rust load generator and the original Rails parity seed. Application sources
-and binaries are unchanged. `loadgen.patch` and `vampfire.rs` adapt the client.
+Runs the original Campfire Ruby/Rust workload shapes using the current
+[shared verification client](https://github.com/basecamp/once-campfire-verification/tree/8c7570427490fa7e19311b81837c63162c763494).
+`loadgen.patch` and `vampfire.rs` adapt protocols; scheduling, histograms, pacing,
+and complete-delivery accounting remain upstream. Rust is unmodified;
+[V application adaptations](../../docs/optimizations.md) are under test.
 
-## Run
+## Reproduce
 
-On this Linux host (six cores, Docker, systemd user session, mise, `patch`):
+Requires Linux, six CPUs, Docker, a systemd user session, mise, GCC and `patch`:
 
 ```sh
+mise run setup
+mise run build
 mise install rust@1.98.1
 mise run bench:reference:prepare
 mise run bench:reference:smoke
 mise run bench:reference
 ```
 
-The runner prints its result directory. Summarize that directory with
-`python benchmarks/reference/report.py DIRECTORY`; add `--export DESTINATION`
-to retain the JSON/CSV evidence outside `.build`. The summary records expected
-and completed scenarios, errors, and each metric's sample count. Missing latency
-or upload results stay null; disconnected fan-out clients are failures, not
-successful zero-latency deliveries. Repetition medians are not pooled percentiles.
+The runner prints its result directory. Run `python benchmarks/reference/report.py
+DIRECTORY --export DESTINATION` to retain JSON/CSV evidence outside `.build`.
+Summaries retain errors, missing cases, sample counts, ranges and repetition
+medians; percentiles are not pooled across runs.
 
-Preparation expects the sibling `once-campfire-rust` checkout at `ccece30` and
-initializes its pinned Rails submodule `90b3300`. If absent, it clones the pinned
-checkout. Images are immutable official amd64 production images. Rails is used
-only to generate the exact seed; this comparison measures Rust and V.
+Preparation uses Rust `2e392fe`, verification `8c75704`, and the original Rails
+fixture revision `90b3300`. Checkouts live under `.build/comparison`. Official
+production images are digest-pinned. Rails only generates the original seed.
+V seed previews are regenerated with the production binary before measurement.
 
-Runs use fresh storage, four server CPUs (0–3), two load-generator CPUs (4–5),
-and loopback HTTP/1.1 keepalive. No User-Agent is sent. `Accept-Encoding: gzip`
-is offered, as upstream; V currently returns identity. WebSockets are uncompressed.
-Servers run sequentially. Three repetitions alternate Rust/V, V/Rust, Rust/V.
-HTTP: 2-second c=4 warmup per route, then 8 seconds at c=1,16,64. Fan-out: 100,
-500,1000 clients; 30 messages 200 ms apart, then four posters for 15 seconds and
-the original drain periods. Upload: five repetitions of `black_hole.jpg` (505,420
-bytes). These are `bench/run` defaults. A later published run used 100/1000/5000/
-10000 connections; V's unchanged 2000-connection cap rules out its larger cases.
+## Conditions
 
-Both apps run natively in the same resource guard. Rust's unmodified official
-production executable, libvips, FFmpeg and supporting libraries are extracted from
-the pinned image; both apps use host glibc. Rust keeps five SQLite readers, three
-workers per job kind, and its release build (fat LTO, one codegen unit). V uses its
-existing release binary, four HTTP workers, four SQLite connections, one job
-worker, and the upstream reactor. Both servers get four CPU cores. Readiness time
-is process start to `/up`, with a warm filesystem cache, not machine cold boot.
+- Three alternating repetitions: Rust/V, V/Rust, Rust/V, each with fresh storage.
+- Four server CPUs (0–3), two client CPUs (4–5); native processes, loopback
+  HTTP/1.1 keepalive, gzip offered, no User-Agent, uncompressed WebSockets.
+- HTTP: 2 seconds of warmup at c=4, then 8 seconds at c=1/16/64 per route.
+- Mixed reads: c=16 history/sidebar/search, 8 seconds, plus 10 message writes/s
+  in HQ. This exercises cache invalidation during writes.
+- Fan-out: 100/500/1000 clients, up to 50 concurrent handshakes, 30 paced messages
+  200 ms apart, then four posters for 15 seconds with upstream drain periods.
+- Upload: five repetitions of the original 505,420-byte `black_hole.jpg`.
+- The original seed has 10 users, 11 rooms, 169 messages, 39 memberships, and
+  131 busy-room messages. Text, memberships, boosts and original media match;
+  V IDs are translated into chronological order. Each app creates its derivatives.
+- Both use WAL/NORMAL. Normal caches, logging and job processing stay enabled.
+  Push/webhook endpoints fail locally, as upstream. Faster servers accumulate
+  more messages/jobs in each fixed time window before later scenarios.
 
-The seed has 10 users, 11 rooms, 169 messages, 39 memberships, and 131 messages in
-the busy room. V receives the same original message bodies, search text, people,
-membership choices, boosts and media. Message IDs are translated into chronological
-order because V pages by ID. Each app generates its own media derivatives. External
-push/webhook endpoints point at closed localhost ports, as in the original harness.
-Both use SQLite WAL/NORMAL; each implementation's normal caches/queues stay enabled.
-Writes and fan-out grow the database during each run. As upstream uses fixed time
-windows, faster servers accumulate more messages before the later scenarios.
+Rust's release executable and media libraries come from the official image;
+it runs with host glibc, five SQLite readers and three workers per job kind.
+V uses `-prod`, GCC/LTO, Boehm GC, four HTTP workers, four SQLite readers, one
+writer, isolated job workers and the upstream WebSocket reactor. Exact flags,
+source/binary hashes and toolchain identities accompany each run.
 
 ## Workload mapping
 
 | Workload | Rust | V |
 | --- | --- | --- |
-| Room view | `/rooms/:id`, rendered HTML with 40 messages | Shell + bootstrap + rooms + users + 40 messages: five sequential HTTP requests per logical operation |
-| Earlier messages | `/rooms/:id/messages?before=…`, 40 rendered messages | `/api/rooms/:id/messages?before=…`, same 40 messages as JSON |
-| Sidebar | `/users/me/sidebar`, rendered HTML | `/api/rooms`, JSON rendered in the browser |
-| Search | `/searches?q=coffee`, 13 rendered matches | `/api/search?q=coffee`, same 13 matches as JSON, reversed display order |
-| Avatar | Jason's generated 512×512 WebP | Jason's generated 640×640 JPEG (V's current media pipeline) |
-| Static CSS | First stylesheet scraped by upstream (`_reset`, 1218 bytes) | Whole `app.css` (30105 bytes) |
-| Health | `/up`, HTML | `/up`, JSON |
-| Post | Form POST, rendered Turbo response | JSON POST, JSON response; same text and unique client ID |
-| Fan-out | Action Cable subscriptions and Turbo broadcasts | V room subscription and JSON broadcasts; same marked messages, connection count, pacing and delivery accounting |
-| Upload | Multipart message, fetch derived image | Upload, attach to message, poll until processed, fetch derived image |
+| Room | One rendered HTML response, 40 messages | Shell + bootstrap + rooms + users + 40 messages: five sequential requests per operation |
+| History | 40 rendered messages | Same 40 messages as JSON |
+| Sidebar | Rendered HTML | JSON rendered by the browser |
+| Search | 13 rendered matches | Same 13 matches as JSON, reversed display order |
+| Avatar | Jason's 512×512 WebP | Jason's 640×640 JPEG |
+| CSS | First stylesheet (`_reset`, 1,218 bytes) | Whole `app.css` (30,105 bytes) |
+| Health | HTML | JSON |
+| Write | Form POST, Turbo response | JSON POST/response; same text and unique client ID |
+| Fan-out | Action Cable/Turbo broadcasts | Room subscriptions/JSON broadcasts; same markers and delivery accounting |
+| Upload | Multipart message + derived image | Upload + message + readiness polling + derived image |
 
-These are application workflows, **not identical payloads or a language-only
-comparison**. Browser JavaScript, layout and rendering are excluded on both sides.
-V's room sequence includes bootstrap data and is deliberately not just a static
-shell benchmark. The V browser fetches rooms and users concurrently; this client
-serializes all five requests on one keepalive connection. Its room latency is a
-server request-sequence measurement, not browser page-load time. Other HTTP data
-rows are more narrowly comparable. Asset sizes,
-view rendering, gzip and caching differences remain visible in the raw evidence.
+These are application workflows, not identical payloads or a language benchmark.
+Browser rendering is excluded. The real V browser fetches rooms/users concurrently;
+the room benchmark serializes its five requests on one connection. Larger upstream
+5,000/10,000-client profiles exceed V's unchanged 2,000-connection configuration.
 
-## Measurement corrections and safeguards
+## Correctness and resources
 
-- Upstream upload selects the first `<img>`, the sender's avatar. We retain this
-  metric and run a separate Rust `--actual-thumbnail 1` series selecting the
-  Active Storage representation. The useful comparison uses actual thumbnails.
-  Both series warm media code; the original series precedes the corrected one.
-- Added `post_errors` exposes failures upstream's fan-out poster excludes from
-  its successful-post count. Histograms, markers, connection gate, pacing and
-  drain calculations remain upstream. Complete delivery means every requested
-  client received each message; receipt counts are not confused with unique posts.
-- Before timing, the harness checks response statuses/counts. After each pair it
-  checks the identical message IDs (through the translation), including order for
-  room/history. A V room operation counts all five HTTP responses in latency/bytes.
-- Process CPU includes worker threads and completed media children; one core is
-  100%. RSS is sampled every 100 ms, summing the server and live children. Peaks
-  are sampled peaks, not exact allocation maxima. Client CPU is recorded separately.
-  CPU per operation covers the measured window; it does not include the future
-  cost of background jobs still queued when the app stops.
-- Every heavy command uses the existing 1536 MiB/no-swap guard and stops at
-  1152 MiB. Final comparisons also set `memory.high=768 MiB`, an earlier kernel
-  reclamation/throttling threshold. This keeps reclaimable WAL file cache from
-  filling the guard before Linux begins reclaiming it. The hard/early-stop caps
-  are unchanged. Applications and the load generator share this budget and run
-  sequentially. A shared lock serializes experiments.
-- Request logging stays at application defaults. A draining sink on client CPUs
-  rotates native logs at 32 MiB (two files). Temporary servers are removed;
-  logs, per-scenario results and isolated databases remain under `.build/comparison`.
-- Two preliminary container/native attempts are excluded from final medians.
-  One completed Rust's workload but stopped during an unbounded 1.1 GB log copy.
-  After bounding logs, V's deliberately failing push retries accumulated a
-  1.00 GiB WAL during writes, crossing the guard via file cache while server RSS
-  was about 46 MiB. Neither stop was an OOM. Final native runs retain failing
-  notification endpoints, record WAL growth/jobs, and apply the same earlier
-  cache-pressure threshold to both applications.
-- Before each full run, wait up to 60 seconds for one-minute load below 1.5 and
-  record the observed load. This is a shared six-core host, not the eight-core
-  allocation or Ryzen processor in the published Ruby/Rust numbers. Do not compare
-  absolute results across those machines. High client CPU can limit throughput.
+Every timed and warmup HTTP response is validated. SQLite supplies the expected
+message windows and content; responses do not supply their own expectations.
+Acknowledged HTTP/mixed writes are checked against stored IDs, room, text and FTS
+rows, including warmups. Fan-out requires every client to receive every posted
+message, and includes post errors. Warmup/read failures invalidate the run.
 
-The default fan-out scenario connects up to 50 sockets concurrently, then waits
-one second after subscription readiness before posting. This includes the app's
-normal presence broadcasts during connection bursts. It is not a test of already
-established, gradually connected clients. A failed scenario stops that app's
-remaining scenarios for the repetition; the next repetition uses fresh storage.
-`additional.py` can measure a skipped case on a fresh seed without mixing it into
-the original series. For example, after the main run has stopped:
+The original upload client selects the sender's avatar first. That legacy status
+measurement is retained separately; the comparison selects the actual Rust
+representation. Both apps' actual thumbnails must decode into pixels after timing.
+The V room adapter also validates intermediate API response shapes. JSON schema
+and HTML presentation differences remain explicit.
 
-```sh
-python scripts/resource_guard.py --report-dir .build/resource-reports \
-  --memory-high-mib 768 --timeout 600 -- \
-  python benchmarks/reference/additional.py cable --apps vampfire \
-  --clients 500 1000 --repetitions 1 --out .build/comparison/isolated-cable
-python scripts/resource_guard.py --report-dir .build/resource-reports \
-  --memory-high-mib 768 --timeout 600 -- \
-  python benchmarks/reference/additional.py upload \
-  --out .build/comparison/isolated-upload
-```
+Server CPU includes threads and completed media children; 100% means one core.
+RSS includes live children and is sampled every 100 ms. CPU/op excludes work left
+queued after measurement, so final job counts and peak WAL size are retained.
+Client CPU and unaccounted host CPU are recorded; the latter includes the runner
+and unrelated jobs. CPU affinity does not isolate this shared host. Before each
+run, wait up to 60 seconds for one-minute load below 1.5 and record actual conditions.
+Client validation can limit saturation throughput.
 
-The adapter logs at most five WebSocket errors/close frames per follow-up process.
-The final primary series used the same adapter without these error-path diagnostics;
-each series records its client binary hash. CPU pinning does not exclude unrelated
-host jobs. Host contention observed during a run must accompany its reported results.
+Heavy commands are serialized through the 1,536 MiB/no-swap guard, with proactive
+stop at 1,152 MiB. Benchmarks set `memory.high=768 MiB` for earlier cache reclamation.
+The apps and client share this budget. Logs drain on client CPUs and rotate at
+32 MiB. Raw results, databases, logs and memory samples remain in `.build/comparison`.
+A failed case stops that app's remaining scenarios for the repetition; later runs
+use fresh seeds. Failures never become successful zero-latency results.
 
-The V toolchain limitation from [the main project](../../docs/toolchain.md) still
-applies. No V compiler/library patches, application optimizations, or upstream
-changes are part of this comparison. The load generator is upstream MIT-licensed;
-see `UPSTREAM-LICENSE`.
+[The V toolchain limitation](../../docs/toolchain.md) applies: current-main library
+sources, official portable bootstrap, no compiler/library patches. The client is
+MIT-licensed; see `UPSTREAM-LICENSE`.
 
-`browser.py rust` / `browser.py vampfire`, wrapped in the same resource guard,
-starts a temporary seeded server on port 4390 for unmeasured browser checks. It
-exits after four minutes or when `.build/comparison/browser-stop` is created.
-Prefer the T3 preview tools. If their host is explicitly unavailable, `--check`
-uses `browser_check.cjs` with an installed Playwright module; `PLAYWRIGHT_MODULE`
-can specify its absolute path. This fallback and the server share the guard.
-It uses fresh browser contexts and leaves the existing demo server untouched.
-Alongside login/history/search, V's check sends short, long Unicode, and short
-messages between two users and verifies both WebSocket receipts and rendered text.
+## Browser checks
+
+Wrap `python benchmarks/reference/browser.py rust` (or `vampfire`) in the resource
+guard to start an isolated server on port 4390 for four minutes. Prefer T3 preview.
+When its host is unavailable, `--check` uses the installed Playwright module named
+by `PLAYWRIGHT_MODULE`. Checks cover login/history/search; V additionally covers
+live Unicode messages, drafts, reconnects, room-switch races, actual thumbnails,
+original downloads and mobile layout. These checks do not prove full feature
+parity or end-to-end delivery through real browser push providers.

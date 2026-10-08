@@ -1,0 +1,4 @@
+[test:v] $ python scripts/resource_guard.py --report-dir .build/resource-reports --timeout 600 -- python scripts/test_v.py
+Resource guard: 1536 MiB hard cap, no swap; stop at 1152 MiB or 600s
+Generated C project in /home/alifadel/repositories/vampfire/.build/compile-702mq2_0/c
+V application checks passed: cryptography, network policy, rich text, notification targeting, and database transaction/statement lifetimes.

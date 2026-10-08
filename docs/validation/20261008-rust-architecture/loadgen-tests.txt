@@ -1,0 +1,30 @@
+Resource guard: 1536 MiB hard cap, no swap; stop at 1152 MiB or 300s
+   Compiling loadgen v0.0.0 (/home/alifadel/repositories/vampfire/.build/comparison/loadgen-verified)
+    Finished `release` profile [optimized] target(s) in 22.50s
+     Running unittests src/main.rs (.build/comparison/loadgen-verified/target/release/deps/loadgen-bd394a8b8500cab3)
+
+running 21 tests
+test cable_client_tests::origin_leaves_out_only_the_default_port ... ok
+test cable_client_tests::session_profile_reports_used_rows_without_claiming_distinct_people ... ok
+test cable_client_tests::unread_notices_are_told_from_streamed_html ... ok
+test tests::message_post_requires_a_complete_response_with_its_actual_message ... ok
+test cable_client_tests::refresh_period_rejects_invalid_and_unrepresentable_values ... ok
+test cable_client_tests::sessions_preserve_each_rows_cookie_and_subscriptions ... ok
+test validation::tests::invalid_or_thin_validation_contract_fails_closed ... ok
+test cable_client_tests::each_client_takes_its_own_session_in_turn ... ok
+test validation::tests::post_requires_actual_message_and_per_request_body ... ok
+test validation::tests::rejects_200_error_pages_truncated_pages_and_wrong_message_windows ... ok
+test validation::tests::checks_all_seeded_words_and_ordinals_in_order_in_each_presentation ... ok
+test validation::tests::rejects_next_opening_attributes_as_missing_content_and_zero_or_overflow_ids ... ok
+test validation_integration_tests::browser_posts_need_no_csrf_fields_and_legacy_tokens_remain_optional ... ok
+test validation::tests::rejects_truncated_final_pagination_message_after_all_expected_content ... ok
+test validation::tests::validates_gzip_crc_truncation_trailing_data_and_content_after_cache_hit ... ok
+test validation_integration_tests::mixed_writer_rejects_missing_contracts_and_unbounded_rates ... ok
+test vampfire::tests::json_contract_rejects_wrong_ids_and_rendered_content ... ok
+test cable_client_tests::presence_timer_delays_first_refresh_and_skips_missed_ticks ... ok
+test validation_integration_tests::intermittent_200_error_page_invalidates_a_loaded_run ... ok
+test cable_client_tests::a_client_is_its_session_and_refreshes_its_presence ... ok
+test validation_integration_tests::mixed_writer_is_paced_validated_and_audited_separately ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+

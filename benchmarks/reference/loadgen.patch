@@ -1,23 +1,22 @@
 --- a/src/main.rs
 +++ b/src/main.rs
-@@ -20,6 +20,8 @@
- //! WebSocket handshakes included; without it there is no `User-Agent` header. For example, a
- //! desktop Chrome: `--user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+@@ -33,6 +33,7 @@
  //! (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'` (one line).
-+
+ 
+ mod validation;
 +mod vampfire;
  
  use std::collections::{HashMap, HashSet};
  use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-@@ -245,6 +247,7 @@
+@@ -263,6 +264,7 @@
  }
  
  fn message_request(cookie: &str, csrf: &str, body_text: &str) -> (Vec<(&'static str, String)>, Bytes) {
 +    if vampfire::enabled() { return vampfire::message(cookie, csrf, body_text); }
-     let body = form(&[("message[body]", body_text), ("message[client_message_id]", &nonce()), ("authenticity_token", csrf)]);
-     (
-         vec![
-@@ -265,6 +268,7 @@
+     let client_id = nonce();
+     let mut fields = vec![("message[body]", body_text), ("message[client_message_id]", client_id.as_str())];
+     let mut headers = vec![
+@@ -310,6 +312,7 @@
      let conc: usize = a.num("conc", 1);
      let duration = Duration::from_secs_f64(a.num("duration", 10.0));
      let post_room = a.opt("post-room");
@@ -25,33 +24,35 @@
      let csrf = a.opt("csrf").unwrap_or_default();
      let gzip = a.num("gzip", 1u8) != 0;
      let accept_encoding = if gzip { "gzip" } else { "identity" };
-@@ -285,6 +289,7 @@
-         let (hist_all, statuses, errors, bytes_total, issued, trace) =
-             (hist_all.clone(), statuses.clone(), errors.clone(), bytes_total.clone(), issued.clone(), trace.clone());
+@@ -349,6 +352,7 @@
+         let audit = audit.clone();
+         let auditing = audit_path.is_some();
          let tracing = trace_path.is_some();
 +        let extra = extra.clone();
          tasks.push(tokio::spawn(async move {
              let mut h = hist();
              let mut local = HashMap::<u16, u64>::new();
-@@ -307,7 +312,7 @@
-                         i += 1;
-                         let (mut h, b) = message_request(&cookie, &csrf, &format!("bench write {i}"));
+@@ -382,7 +386,7 @@
+                     Some(room) => {
+                         let (mut h, b) = message_request(&cookie, &csrf, posted.as_deref().unwrap());
                          h.push(("accept-encoding", accept_encoding.into()));
 -                        ("POST", format!("/rooms/{room}/messages"), h, b)
-+                        ("POST", vampfire::post_path(room), h, b)
++                        ("POST", vampfire::post_path(&room), h, b)
                      }
                      None => {
                          let mut h = vec![("cookie", cookie.clone())];
-@@ -318,14 +323,14 @@
+@@ -393,8 +397,8 @@
                  let t0 = Instant::now();
                  let wall0 =
                      if tracing { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros() } else { 0 };
 -                match send(conn.as_mut().unwrap(), &addr, method, &p, &headers, body).await {
 -                    Ok(r) => {
-+                match vampfire::send_http(conn.as_mut().unwrap(), &addr, method, &p, &headers, body, &extra).await {
++                match vampfire::send_http(conn.as_mut().unwrap(), &addr, method, &p, &headers, body, if method == "GET" { &extra } else { &[] }).await {
 +                    Ok((r, response_bytes)) => {
                          h.record(t0.elapsed().as_micros() as u64).ok();
-                         if tracing {
+                         let valid = if let Some(v) = &mut validator {
+                             v.check(r.status, &r.headers, &r.body, posted.as_deref())
+@@ -421,7 +425,7 @@
                              local_trace.push((wall0, t0.elapsed().as_micros() as u64, r.status));
                          }
                          *local.entry(r.status).or_default() += 1;
@@ -60,73 +61,81 @@
                          if r.headers.get("connection").map(|v| v == "close").unwrap_or(false) {
                              conn = None;
                          }
-@@ -376,6 +381,7 @@
- // Action Cable fan-out
- 
- struct Delivery {
-+    post_errors: AtomicU64,
-     sent: Mutex<HashMap<u64, Instant>>,
-     got: Mutex<HashMap<u64, (usize, Instant)>>, // seq -> (clients received, last receipt)
-     per_client: Mutex<Histogram<u64>>,
-@@ -411,6 +417,7 @@
-     stop: Arc<AtomicBool>,
+@@ -529,6 +533,10 @@
      delivery: Arc<Delivery>,
+     refresh: Option<(Duration, f64)>,
  ) -> Res<()> {
-+    if vampfire::enabled() { return vampfire::cable_client(addr, source, cookie, subs, confirmed, connected, stop, delivery).await; }
++    if vampfire::enabled() {
++        if refresh.is_some() { return Err("V presence refresh profile is not implemented".into()); }
++        return vampfire::cable_client(addr, source, cookie, subs, confirmed, connected, stop, delivery).await;
++    }
      let mut req = format!("ws://{addr}/cable").into_client_request()?;
      let h = req.headers_mut();
      h.insert("cookie", cookie.parse()?);
-@@ -623,9 +630,10 @@
+@@ -855,7 +863,7 @@
      let (h, b) = message_request(cookie, csrf, &format!("fanout bmk{seq}z"));
      let t0 = Instant::now();
      delivery.sent.lock().unwrap().insert(seq, t0);
 -    match send(sender.as_mut()?, addr, "POST", &format!("/rooms/{room}/messages"), &h, b).await {
-+    match send(sender.as_mut()?, addr, "POST", &vampfire::post_path(room), &h, b).await {
-         Ok(r) if r.status < 400 => Some(t0.elapsed().as_micros() as u64),
++    match send(sender.as_mut()?, addr, "POST", &vampfire::post_path(&room), &h, b).await {
+         Ok(r) if valid_message_post(r.status, &r.body, &format!("fanout bmk{seq}z")) => Some(t0.elapsed().as_micros() as u64),
          _ => {
-+            delivery.post_errors.fetch_add(1, Ordering::Relaxed);
              *sender = None;
-             None
-         }
-@@ -696,7 +704,10 @@
+@@ -865,6 +873,7 @@
+ }
+ 
+ fn valid_message_post(status: u16, body: &[u8], expected: &str) -> bool {
++    if vampfire::enabled() { return status == 201 && vampfire::validate_json("post_message", body, &None, &None, &[], Some(expected)).is_ok(); }
+     let Ok(text) = std::str::from_utf8(body) else { return false };
+     static IDS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+     let ids = IDS.get_or_init(|| regex::Regex::new(r#"data-message-id="([0-9]+)""#).unwrap());
+@@ -942,6 +951,7 @@
+         let (channel, name) = s.split_once('|').unwrap_or(("Turbo::StreamsChannel", s));
          subs.push(json!({"channel": channel, "signed_stream_name": name}).to_string());
      }
- 
 +    if vampfire::enabled() { subs = vec![room.clone()]; }
-+
-     let delivery = Arc::new(Delivery {
-+        post_errors: AtomicU64::new(0),
-         sent: Mutex::new(HashMap::new()),
-         got: Mutex::new(HashMap::new()),
-         per_client: Mutex::new(hist()),
-@@ -858,6 +869,7 @@
-         "clients": clients,
-         "ready": ready,
-         "failed": failed.load(Ordering::Relaxed),
-+        "post_errors": delivery.post_errors.load(Ordering::Relaxed),
-         "connect_secs": (connect_secs * 100.0).round() / 100.0,
-         "subscriptions_per_client": subs.len(),
-         "latency": latency,
-@@ -910,7 +922,8 @@
-         .await?;
+     // Client n takes session row n % rows; use a fixture with verified distinct users for a people profile.
+     let sessions = match a.opt("sessions") {
+         Some(path) => parse_sessions(&std::fs::read_to_string(path)?),
+@@ -1198,10 +1208,10 @@
+         if !csrf.is_empty() {
+             headers.push(("x-csrf-token", csrf.clone()));
+         }
+-        let r = one_shot(&addr, "POST", &format!("/rooms/{room}/messages"), &headers, Bytes::from(body)).await?;
++        let r = one_shot(&addr, "POST", &vampfire::post_path(&room), &headers, Bytes::from(body)).await?;
          let post_ms = t0.elapsed().as_secs_f64() * 1000.0;
          let html = String::from_utf8_lossy(&r.body).to_string();
 -        let Some(src) = img_re.captures(&html).map(|c| unescape(&c[1])) else {
-+        let Some(src) = img_re.captures_iter(&html).map(|c| unescape(&c[1]))
-+            .find(|src| a.num("actual-thumbnail", 0u8) == 0 || src.contains("/representations/")) else {
++        let Some(src) = img_re.captures_iter(&html).map(|c| unescape(&c[1])).find(|src| a.num("actual-thumbnail", 0u8) == 0 || src.contains("/representations/")) else {
              runs.push(json!({"post_status": r.status, "post_ms": post_ms, "error": "no <img> in response"}));
              continue;
          };
-@@ -930,7 +943,7 @@
+@@ -1209,19 +1219,23 @@
+         let mut url = src.clone();
+         let mut status = 0;
+         let mut size = 0;
++        let mut image_body = Bytes::new();
+         for _ in 0..5 {
+             let path = url.trim_start_matches(&format!("http://{addr}")).to_string();
+             let g = one_shot(&addr, "GET", &path, &[("cookie", cookie.clone())], Bytes::new()).await?;
+             status = g.status;
+             size = g.body.len();
++            image_body = g.body.clone();
+             match g.headers.get("location") {
+                 Some(loc) if (300..400).contains(&g.status) => url = loc.to_str()?.to_string(),
+                 _ => break,
+             }
          }
          let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
++        if status != 200 { return Err("thumbnail failed".into()); }
++        if a.num("actual-thumbnail", 0u8) != 0 { vampfire::decode_image(&image_body)?; }
          runs.push(json!({
 -            "post_status": r.status, "post_ms": (post_ms * 10.0).round() / 10.0,
-+            "post_status": r.status, "selected_image_url": src, "post_ms": (post_ms * 10.0).round() / 10.0,
++            "selected_image_url": src, "pixels_decoded": a.num("actual-thumbnail", 0u8) != 0, "post_status": r.status, "post_ms": (post_ms * 10.0).round() / 10.0,
              "thumb_status": status, "thumb_bytes": size, "thumb_ms": ((total_ms - post_ms) * 10.0).round() / 10.0,
              "total_ms": (total_ms * 10.0).round() / 10.0,
          }));
-@@ -1002,7 +1015,11 @@
+@@ -1293,7 +1307,11 @@
      let cmd = raw.get(1).cloned().unwrap_or_default();
      let a = Args::parse(&raw[2.min(raw.len())..]);
      USER_AGENT.set(a.opt("user-agent")).expect("set once");
@@ -138,3 +147,25 @@
          "login" => login(&a).await,
          "scrape" => scrape(&a).await,
          "http" => http_load(&a).await,
+--- a/src/validation.rs
++++ b/src/validation.rs
+@@ -150,7 +150,7 @@
+     pub fn check(&mut self, status: u16, headers: &HeaderMap, wire: &Bytes, posted: Option<&str>) -> Result<(), &'static str> {
+         let content_type = headers.get("content-type").and_then(|v| v.to_str().ok()).ok_or("missing content type")?;
+         let encoding = headers.get("content-encoding").map(|v| v.to_str().unwrap_or("invalid")).unwrap_or("identity");
+-        if status != 200 || wire.is_empty() {
++        if (status != 200 && !(self.kind == "post_message" && self.content_type == "application/json" && status == 201)) || wire.is_empty() {
+             return Err("unsuccessful or empty response");
+         }
+         if content_type.split(';').next().unwrap_or("").trim() != self.content_type {
+@@ -179,7 +179,9 @@
+             }
+             _ => return Err("unsupported content encoding"),
+         };
+-        if let Some(expected) = &self.exact_body {
++        if self.content_type == "application/json" {
++            self.message_id = crate::vampfire::validate_json(&self.kind, body, &self.message_ids, &self.message_content, &self.required, posted)?;
++        } else if let Some(expected) = &self.exact_body {
+             if body != expected {
+                 return Err("changed binary or static response");
+             }

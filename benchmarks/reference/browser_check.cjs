@@ -58,6 +58,8 @@ const base = 'http://127.0.0.1:4390';
       await signIn(recipient, labels['emails.jason']);
       await recipient.goto(`${base}/rooms/${labels['rooms.watercooler']}`);
       await recipient.waitForFunction(() => document.querySelector('#presence')?.textContent.includes('here now'));
+      await recipient.locator('#editor').fill('Keep this unsent draft');
+      await recipient.evaluate(() => { window.savedEditor = document.querySelector('#editor'); });
       const messages = [
         'Main update: short payload',
         'Main update: unicode مرحباً 👋 ' + 'x'.repeat(4096),
@@ -71,7 +73,81 @@ const base = 'http://127.0.0.1:4390';
       }
       report.liveMessages = messages.length;
       report.liveUnicode = true;
+      assert.equal(await recipient.locator('#editor').innerText(), 'Keep this unsent draft');
+      assert.ok(await recipient.evaluate(() => window.savedEditor === document.querySelector('#editor')));
+      report.draftPreservedDuringRefresh = true;
       await recipientContext.close();
+
+      // A reconnect while viewing history must preserve the visible anchor and editor.
+      await page.goto(`${base}/rooms/${labels['rooms.watercooler']}?at=${labels['messages.busy_060']}`);
+      await page.locator(`#message-${labels['messages.busy_060']}`).waitFor();
+      await page.waitForFunction(() => document.querySelector('#presence')?.textContent.includes('here now'));
+      await page.locator('#editor').fill('Reconnect draft');
+      const anchor = await page.evaluate(async () => {
+        const { state } = await import('/assets/ui.js');
+        const { connectSocket } = await import('/assets/chat.js');
+        const top = document.querySelector('#messages').getBoundingClientRect().top;
+        const first = [...document.querySelectorAll('#messages .message')].find(item => item.getBoundingClientRect().bottom > top);
+        window.savedEditor = document.querySelector('#editor');
+        const previous = state.socket;
+        connectSocket();
+        // A queued callback from a replaced connection must have no effect.
+        previous.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({kind: 'message_deleted', message_id: Number(first.dataset.id)}) }));
+        return Number(first.dataset.id);
+      });
+      await page.waitForFunction(async () => (await import('/assets/ui.js')).state.socket.readyState === WebSocket.OPEN);
+      await page.waitForTimeout(250);
+      await page.locator(`#message-${anchor}`).waitFor();
+      assert.equal(await page.locator('#editor').innerText(), 'Reconnect draft');
+      assert.ok(await page.evaluate(() => window.savedEditor === document.querySelector('#editor')));
+      report.historyReconnectAnchor = anchor;
+      report.replacedSocketIgnored = true;
+
+      // Release an older request only after the user has switched to a different room.
+      let release, started;
+      const held = new Promise(resolve => { release = resolve; });
+      const requested = new Promise(resolve => { started = resolve; });
+      const hq = labels['rooms.hq'];
+      await page.route(`**/api/rooms/${hq}/messages`, async route => {
+        started();
+        await held;
+        await route.continue();
+      });
+      await page.locator(`#sidebar [data-room="${hq}"]`).first().click();
+      await requested;
+      await page.locator(`#sidebar [data-room="${labels['rooms.watercooler']}"]`).first().click();
+      release();
+      await page.waitForTimeout(250);
+      assert.ok(await page.evaluate(async room => {
+        const { state } = await import('/assets/ui.js');
+        return state.room.id === room && state.messages.length > 0 && state.messages.every(message => message.room_id === room);
+      }, labels['rooms.watercooler']));
+      await page.unroute(`**/api/rooms/${hq}/messages`);
+      report.roomSwitchRace = true;
+
+      await page.locator('#editor').fill('Current pipeline preview');
+      await page.locator('#file-picker').setInputFiles(path.resolve(__dirname, '../../.build/comparison/rust-source/reference/test/fixtures/files/black_hole.jpg'));
+      await page.locator('.pending-file').waitFor();
+      await page.locator('#composer button[type=submit]').click();
+      await page.locator('article.message').filter({ hasText: 'Current pipeline preview' }).waitFor();
+      const image = page.locator('article.message img.message-image[alt="black_hole.jpg"][src*="thumb=1"]').last();
+      await image.waitFor();
+      await image.evaluate(img => img.decode());
+      report.thumbnailDecoded = await image.evaluate(img => img.naturalWidth > 0 && img.naturalHeight > 0);
+      assert.ok(report.thumbnailDecoded);
+      const href = await image.locator('xpath=../..').locator('a[download]').getAttribute('href');
+      const download = await context.request.get(`${base}${href}`);
+      assert.equal(download.status(), 200);
+      assert.ok((await download.body()).equals(fs.readFileSync(path.resolve(__dirname, '../../.build/comparison/rust-source/reference/test/fixtures/files/black_hole.jpg'))));
+      report.originalDownload = true;
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await page.waitForFunction(() => document.querySelector('#sidebar').getBoundingClientRect().right <= 0);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await page.screenshot({ path: path.join(directory, 'mobile.png') });
+      report.mobileFits = true;
+      await page.setViewportSize({ width: 1440, height: 1000 });
     } else {
       // The upstream earlier-page route is a Turbo fragment; inspect it in the browser.
       await page.goto(`${base}/rooms/${labels['rooms.watercooler']}/messages?before=${labels['messages.busy_060']}`);

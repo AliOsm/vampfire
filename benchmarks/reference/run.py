@@ -19,10 +19,10 @@ import time
 from container import Container
 
 ROOT = Path(__file__).resolve().parents[2]
-REFERENCE = ROOT.parent/'once-campfire-rust'
+REFERENCE = ROOT/'.build/comparison/rust-source'
 WORK = ROOT/'.build/comparison'
-LOADGEN = WORK/'loadgen/target/release/loadgen'
-RUST_IMAGE = 'ghcr.io/basecamp/once-campfire-rust@sha256:9fc900c999bcfefe6ba4362d5245a92bb45445a2a04656017b6a5d3d2f034b1c'
+LOADGEN = WORK/'loadgen-verified/target/release/loadgen'
+RUST_IMAGE = 'ghcr.io/basecamp/once-campfire-rust@sha256:b62703013928e988cb47cfa840075a445dc2e349dd3f174662ef2de028b65419'
 SERVER_CPUS = '0-3'
 CLIENT_CPUS = '4-5'
 PORT = 4390
@@ -30,6 +30,11 @@ PORT = 4390
 
 def write(path, value):
     path.write_text(json.dumps(value, indent=2)+'\n')
+
+
+def host_cpu_seconds():
+    fields = Path('/proc/stat').read_text().splitlines()[0].split()[1:]
+    return sum(int(fields[i]) for i in (0, 1, 2, 5, 6, 7)) / os.sysconf('SC_CLK_TCK')
 
 
 def process_stats(pid):
@@ -93,7 +98,7 @@ class App:
                     if line and not line.startswith('#') and '=' in line:
                         k,v=line.split('=',1);env[k]=v
                 if name=='rust':
-                    runtime=WORK/'rust-runtime'
+                    runtime=WORK/'rust-runtime-2e392fe'
                     env.update(HTTP_PORT=str(PORT),TARGET_PORT=str(PORT+1),JOB_CONCURRENCY='3',RAILS_MAX_THREADS='5',RAILS_LOG_LEVEL='warn',
                         CAMPFIRE_STORAGE_PATH=str(self.storage),CAMPFIRE_DATABASE_PATH=str(self.database),
                         CAMPFIRE_FILES_PATH=str(self.storage/'storage'),
@@ -136,6 +141,8 @@ class App:
                     row['container_memory_bytes']=int((self.container.cgroup/'memory.current').read_text())
                 row['time']=time.monotonic()
                 row['unix_ms']=time.time_ns()//1_000_000
+                row['host_busy_cpu_seconds']=host_cpu_seconds()
+                row['load_average']=list(os.getloadavg())
                 wal=Path(str(self.database)+'-wal')
                 row['wal_bytes']=wal.stat().st_size if wal.exists() else 0
                 self.samples.append(row)
@@ -185,6 +192,7 @@ def request(path,cookie=''):
 def lg(app, *args, file=None):
     app.check()
     before=process_stats(app.pid)
+    host_before=host_cpu_seconds()
     usage=resource.getrusage(resource.RUSAGE_CHILDREN)
     client_before=usage.ru_utime+usage.ru_stime
     start=time.monotonic()
@@ -202,6 +210,7 @@ def lg(app, *args, file=None):
     value=json.loads(result.stdout)
     recent=[s for s in app.samples if s['time']>=start]
     value['resources']={
+        'host_unaccounted_cpu_percent_one_core':max(0,host_cpu_seconds()-host_before-(after['cpu_seconds']-before['cpu_seconds'])-client_cpu)/elapsed*100,
         'wall_seconds':elapsed,'server_cpu_seconds':max(0,after['cpu_seconds']-before['cpu_seconds']),
         'server_cpu_percent_one_core':max(0,after['cpu_seconds']-before['cpu_seconds'])/elapsed*100,
         'client_cpu_seconds':client_cpu,'client_cpu_percent_one_core':client_cpu/elapsed*100,
@@ -296,15 +305,42 @@ def run_app(name,rep,out,smoke):
         app.session=lg(app,'scrape','--cookie',logged['cookie'],'--room',app.labels['rooms.watercooler'])
         app.session['cookie']=logged['cookie'];app.session['csrf']=app.session['csrf'] or ''
         report['validation']=validation(app)
+        from contracts import prepare, audit
+        contracts=prepare(app,report['validation'],request)
+        report['acknowledged_writes']=[]
         cookie=app.session['cookie']
         for name,args in routes(app):
-            if not smoke:lg(app,'http','--cookie',cookie,*args,'--conc',4,'--duration',2)
+            args=[*args,'--validate',contracts[name]]
+            if not smoke:
+                warm_args=[*args]
+                if name=='post_message':warm_args += ['--audit-writes',directory/'warmup-acks.jsonl']
+                warm=lg(app,'http','--cookie',cookie,*warm_args,'--conc',4,'--duration',2)
+                assert warm['errors']==0 and warm['invalid_responses']==0,warm
+                if name=='post_message':report['acknowledged_writes'].append(audit(app,directory/'warmup-acks.jsonl',warm['ok']))
             for conc in ([1] if smoke else [1,16,64]):
-                res=lg(app,'http','--cookie',cookie,*args,'--conc',conc,'--duration',1 if smoke else 8,file=f'http-{name}-{conc}')
+                timed_args=[*args]
+                audit_path=directory/f'acks-{conc}.jsonl'
+                if name=='post_message':timed_args += ['--audit-writes',audit_path]
+                res=lg(app,'http','--cookie',cookie,*timed_args,'--conc',conc,'--duration',1 if smoke else 8,file=f'http-{name}-{conc}')
+                assert res['invalid_responses']==0,res
+                if name=='post_message':report['acknowledged_writes'].append(audit(app,audit_path,res['ok']))
                 res['route']=name;report['http'].append(res)
                 assert res['errors']==0 and all(int(k)<400 for k in res['statuses']),res
                 print(f'{app.name} {rep}: {name} c={conc}: {res["rps"]} ops/s p99={res["latency"].get("p99_ms")} ms',flush=True)
                 write(directory/'result.json',report)
+        report['mixed']=[]
+        for name,args in routes(app):
+            if name not in ['messages_page','sidebar','search']:continue
+            path=directory/f'mixed-{name}-acks.jsonl'
+            res=lg(app,'http','--cookie',cookie,*args,'--conc',16,'--duration',1 if smoke else 8,
+                '--validate',contracts[name],'--mixed-write-rate',10,'--mixed-write-room',app.labels['rooms.hq'],
+                '--mixed-write-validate',contracts['post_message'],'--mixed-write-audit',path,
+                '--csrf',app.session['csrf'],file=f'mixed-{name}')
+            assert res['errors']==0 and res['invalid_responses']==0,res
+            assert res['writer']['errors']==0 and res['writer']['invalid_responses']==0,res
+            res['route']=name;report['mixed'].append(res)
+            report['acknowledged_writes'].append(audit(app,path,res['writer']['ok']))
+            print(f'{app.name} {rep}: mixed {name}: {res["rps"]} ops/s',flush=True)
         for count in ([10] if smoke else [100,500,1000]):
             res=lg(app,'cable','--cookie',cookie,'--room',app.labels['rooms.watercooler'],
                 '--csrf',app.session['csrf'],'--streams',','.join(app.session['streams']),
@@ -313,7 +349,7 @@ def run_app(name,rep,out,smoke):
             report['cable'].append(res)
             write(directory/'result.json',report)
             print(f'{app.name} {rep}: fanout {count}: ready={res["ready"]}, paced={res["latency"]["complete"]}, saturated={res["throughput"]["complete"]}/{res["throughput"]["posted"]}, {res["throughput"]["delivered_msgs_per_sec"]} messages/s',flush=True)
-            assert res['ready']==count and res['failed']==0 and res['post_errors']==0,res
+            assert res['ready']==count and res['failed']==0 and res['latency']['post_errors']==0 and res['throughput']['post_errors']==0,res
             assert res['latency']['complete']==res['latency']['messages'],res
             assert res['throughput']['complete']==res['throughput']['posted'],res
             time.sleep(2)
@@ -321,11 +357,12 @@ def run_app(name,rep,out,smoke):
             '--csrf',app.session['csrf'],'--file',REFERENCE/'reference/test/fixtures/files/black_hole.jpg',
             '--reps',1 if smoke else 5,file='upload')
         assert all(r.get('thumb_status')==200 for r in report['upload']['runs']),report['upload']
+        if app.name=='vampfire':assert all(r.get('pixels_decoded') for r in report['upload']['runs']),report['upload']
         if app.name=='rust':
             report['upload_actual_thumbnail']=lg(app,'upload','--cookie',cookie,'--room',app.labels['rooms.hq'],
                 '--csrf',app.session['csrf'],'--file',REFERENCE/'reference/test/fixtures/files/black_hole.jpg',
                 '--reps',1 if smoke else 5,'--actual-thumbnail',1,file='upload-actual-thumbnail')
-            assert all(r.get('thumb_status')==200 for r in report['upload_actual_thumbnail']['runs']),report['upload_actual_thumbnail']
+            assert all(r.get('thumb_status')==200 and r.get('pixels_decoded') for r in report['upload_actual_thumbnail']['runs']),report['upload_actual_thumbnail']
         with sqlite3.connect(app.database) as db:
             report['final_message_count']=db.execute('SELECT COUNT(*) FROM messages').fetchone()[0]
             if app.name=='vampfire':report['pending_jobs_at_end']=db.execute('SELECT COUNT(*) FROM jobs').fetchone()[0]
@@ -361,6 +398,8 @@ def main():
     build=json.loads((ROOT/'.build/vampfire.build.json').read_text())
     assert build['mode']=='release'
     assert hashlib.sha256((ROOT/'.build/vampfire').read_bytes()).hexdigest()==build['binary_sha256']
+    media_build=json.loads((WORK/'vampfire-seed/media-build.json').read_text())
+    assert media_build['binary_sha256']==build['binary_sha256'],'Run bench:reference:prepare to refresh seed media.'
     digest=hashlib.sha256()
     for path in sorted([*(ROOT/'src').glob('*'),*(ROOT/'public').rglob('*')]):
         if path.is_file():digest.update(str(path.relative_to(ROOT)).encode()+b'\0'+path.read_bytes())
@@ -374,14 +413,17 @@ def main():
         'rust_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REFERENCE,text=True).strip(),
         'vampfire_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
         'vampfire_build':build,'rust_image':RUST_IMAGE,
-        'rust_runtime':json.loads((WORK/'rust-runtime/ready.json').read_text()),
+        'rust_runtime':json.loads((WORK/'rust-runtime-2e392fe/ready.json').read_text()),
         'image_metadata':json.loads(subprocess.check_output(['docker','image','inspect',RUST_IMAGE]))[0]['Config']['Labels'],
+        'verification_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=WORK/'verification',text=True).strip(),
         'loadgen_sha256':hashlib.sha256(LOADGEN.read_bytes()).hexdigest(),
         'seed_translation':json.loads((WORK/'vampfire-seed/translation.json').read_text()),
+        'seed_media':json.loads((WORK/'vampfire-seed/media.json').read_text()),
+        'seed_media_build':media_build,
         'cpu':next(line.split(':',1)[1].strip() for line in Path('/proc/cpuinfo').read_text().splitlines() if line.startswith('model name')),
         'platform':platform.platform(),'server_cpus':SERVER_CPUS,'client_cpus':CLIENT_CPUS,
         'conditions':{'http_seconds':8,'http_concurrency':[1,16,64],'http_warmup_seconds':2,'http_warmup_concurrency':4,
-            'cable_clients':[100,500,1000],'cable_latency_messages':30,'cable_interval_ms':200,'cable_throughput_seconds':15,
+            'mixed_reads':{'writer_messages_per_second':10,'reader_concurrency':16,'seconds':8},'cable_clients':[100,500,1000],'cable_latency_messages':30,'cable_interval_ms':200,'cable_throughput_seconds':15,
             'cable_posters':4,'upload_repetitions':5,'repetitions':3,'network':'HTTP/1.1 loopback, keepalive, Accept-Encoding gzip; uncompressed WebSockets',
             'server_processes':'Both native; Rust official production executable and media libraries extracted from the pinned image, using host glibc',
             'cold_start':'Native process start until /up, warm filesystem cache',

@@ -73,6 +73,10 @@ def upload_summary(runs, key, expected_reps, uploads_per_rep):
     }
 
 
+def fanout_errors(row):
+    return row.get("post_errors", row["latency"].get("post_errors", 0) + row["throughput"].get("post_errors", 0))
+
+
 def summarize(root):
     environment = json.loads((root / "environment.json").read_text())
     if environment.get("smoke"):
@@ -82,7 +86,7 @@ def summarize(root):
     concurrencies = conditions["http_concurrency"]
     client_counts = conditions["cable_clients"]
     results = {}
-    summary = {"http": [], "cable": [], "process": {}, "upload": {}, "checks": {}}
+    summary = {"http": [], "mixed": [], "cable": [], "process": {}, "upload": {}, "checks": {}}
     for name in APPS:
         runs = []
         missing = []
@@ -95,6 +99,7 @@ def summarize(root):
         results[name] = runs
         all_http = [h for run in runs for h in run["http"]]
         all_cable = [c for run in runs for c in run["cable"]]
+        all_mixed = [h for run in runs for h in run.get("mixed", [])]
         summary["checks"][name] = {
             "expected_repetitions": repetitions,
             "recorded_repetitions": len(runs),
@@ -105,11 +110,16 @@ def summarize(root):
             "http_logical_operations": sum(h["ok"] for h in all_http),
             "http_errors": sum(h["errors"] + sum(n for status, n in h["statuses"].items()
                                if int(status) >= 400) for h in all_http),
+            "http_invalid_responses": sum(h.get("invalid_responses", 0) for h in all_http),
+            "mixed_scenarios": len(all_mixed),
+            "mixed_invalid_responses": sum(h.get("invalid_responses", 0) + h["writer"].get("invalid_responses", 0) for h in all_mixed),
+            "mixed_errors": sum(h["errors"] + h["writer"]["errors"] for h in all_mixed),
+            "verified_acknowledged_writes": sum(a["acknowledged"] for r in runs for a in r.get("acknowledged_writes", []) if a["verified"]),
             "expected_fanout_scenarios": repetitions * len(client_counts),
             "recorded_fanout_scenarios": len(all_cable),
             "fanout_unready_clients": sum(c["clients"] - c["ready"] for c in all_cable),
             "fanout_failed_clients": sum(c["failed"] for c in all_cable),
-            "fanout_post_errors": sum(c["post_errors"] for c in all_cable),
+            "fanout_post_errors": sum(fanout_errors(c) for c in all_cable),
             "fanout_incomplete_messages": sum(
                 c["throughput"]["posted"] - c["throughput"]["complete"]
                 + c["latency"]["messages"] - c["latency"]["complete"] for c in all_cable),
@@ -127,12 +137,18 @@ def summarize(root):
                     values = [http_value(h, field) for h in rows]
                     row[field] = distribution(v for v in values if v is not None)
                 summary["http"].append(row)
+        for route in ("messages_page", "sidebar", "search"):
+            rows = [h for h in all_mixed if h["route"] == route]
+            row = {"app": name, "route": route, "concurrency": 16}
+            for field in HTTP_FIELDS:
+                row[field] = distribution(http_value(h, field) for h in rows)
+            summary["mixed"].append(row)
         for count in client_counts:
             rows = [c for c in all_cable if c["clients"] == count]
             row = {
                 "app": name, "clients": count, "recorded_repetitions": len(rows),
                 "successful_repetitions": sum(
-                    c["ready"] == count and c["failed"] == 0 and c["post_errors"] == 0
+                    c["ready"] == count and c["failed"] == 0 and fanout_errors(c) == 0
                     and c["latency"]["messages"] == c["latency"]["complete"]
                     and c["throughput"]["posted"] == c["throughput"]["complete"] for c in rows),
             }
