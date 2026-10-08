@@ -80,11 +80,16 @@ fn encoded_response(body string) CachedResponse {
 	} else {
 		''
 	}
-	return CachedResponse{ body: body, compressed: if compressed.len < body.len {
-		compressed
-	} else {
-		''
-	}, etag: 'W/"' + digest(body) + '"', created: time.now().unix() }
+	return CachedResponse{
+		body:       body
+		compressed: if compressed.len < body.len {
+			compressed
+		} else {
+			''
+		}
+		etag:       'W/"' + digest(body) + '"'
+		created:    time.now().unix()
+	}
 }
 
 fn send_cached(mut ctx Context, entry CachedResponse) veb.Result {

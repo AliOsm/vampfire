@@ -34,20 +34,22 @@ struct PreparedQuery {
 struct SqlConnection {
 	handle &C.sqlite3
 mut:
-	queries map[string]&PreparedQuery
-	keys    []string
-	next    int
-	pages   int
+	queries         map[string]&PreparedQuery
+	keys            []string
+	next            int
+	pages           int
+	requested_pages int
 }
 
 @[heap]
 struct DatabasePool {
-	readers     chan &SqlConnection
-	writer      chan &SqlConnection
-	checkpoints chan bool
-	checkpoint  &SqlConnection
-	observer    &SqlConnection
-	job_wakes   map[string]chan bool
+	readers         chan &SqlConnection
+	writer          chan &SqlConnection
+	checkpoints     chan bool
+	checkpoint_done chan bool
+	checkpoint      &SqlConnection
+	observer        &SqlConnection
+	job_wakes       map[string]chan bool
 mut:
 	checkpoint_mu sync.Mutex
 	observer_mu   sync.Mutex
@@ -71,12 +73,13 @@ fn open_database(directory string) !&Database {
 	path := os.join_path(directory, 'vampfire.sqlite3')
 	mut writer := connect_sqlite(path, false)!
 	pool := &DatabasePool{
-		readers:     chan &SqlConnection{cap: 4}
-		writer:      chan &SqlConnection{cap: 1}
-		checkpoints: chan bool{cap: 1}
-		checkpoint:  connect_sqlite(path, false)!
-		observer:    connect_sqlite(path, true)!
-		job_wakes:   {
+		readers:         chan &SqlConnection{cap: 4}
+		writer:          chan &SqlConnection{cap: 1}
+		checkpoints:     chan bool{cap: 1}
+		checkpoint_done: chan bool{cap: 1}
+		checkpoint:      connect_sqlite(path, false)!
+		observer:        connect_sqlite(path, true)!
+		job_wakes:       {
 			'media':     chan bool{cap: 1}
 			'notify':    chan bool{cap: 1}
 			'preview':   chan bool{cap: 1}
@@ -113,6 +116,7 @@ fn (db &Database) session() &Database { return &Database{ pool: db.pool } }
 
 fn (db &Database) close() ! {
 	db.pool.checkpoints.close()
+	_ := <-db.pool.checkpoint_done
 	// close() is used only after all application work has stopped (unit tests).
 	mut writer := <-db.pool.writer
 	writer.close()
@@ -276,14 +280,16 @@ fn record_wal_size(ref voidptr, _handle &C.sqlite3, _name &char, pages int) int 
 }
 
 fn (pool &DatabasePool) finish_write(mut conn SqlConnection) {
+	if conn.pages < conn.requested_pages { conn.requested_pages = 0 }
 	if conn.pages >= 10000 {
 		mut shared_pool := unsafe { &DatabasePool(pool) }
 		shared_pool.checkpoint_mu.lock()
 		C.sqlite3_wal_checkpoint_v2(conn.handle, unsafe { nil }, 2, unsafe { nil }, unsafe { nil })
 		shared_pool.checkpoint_mu.unlock()
-	} else if conn.pages >= 1000 {
+	} else if conn.pages - conn.requested_pages >= 1000 {
 		select {
 			pool.checkpoints <- true {
+				conn.requested_pages = conn.pages
 			}
 			else {
 			}
@@ -301,6 +307,7 @@ fn checkpoint_worker(pool &DatabasePool) {
 	}
 	mut conn := pool.checkpoint
 	conn.close()
+	pool.checkpoint_done <- true
 }
 
 // Observe every connection's commits, including direct writes by maintenance
