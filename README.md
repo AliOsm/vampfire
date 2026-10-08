@@ -14,14 +14,15 @@ measured **2026-10-08** after adapting the [Rust optimizations](docs/optimizatio
 Medians of three alternating runs on an Intel i5-8500: four server cores, two
 client cores, native release binaries; **V built with `-prod`, GCC/LTO**.
 HTTP uses 16 concurrent clients.
+Rust revision: [`2e392fe`](https://github.com/basecamp/once-campfire-rust/commit/2e392fe1c839541c3cbfcf0b980ea36310a37393).
 
 | Metric | [Rust Campfire](https://github.com/basecamp/once-campfire-rust) | Vampfire (V) |
 | --- | ---: | ---: |
 | Room request sequence¹ | 21,142 ops/s | 3,208 ops/s |
-| History throughput, 40 messages | 20,885 ops/s | 30,011 ops/s |
+| Cached history throughput, 40 messages | 20,885 ops/s | 30,011 ops/s |
 | History p99 latency | 2.52 ms | 2.97 ms |
 | History throughput with 10 writes/s | 16,953 ops/s | 17,622 ops/s |
-| Search throughput, 13 matches | 23,298 ops/s | 33,089 ops/s |
+| Cached search throughput, 13 matches | 23,298 ops/s | 33,089 ops/s |
 | Message-write throughput | 2,082 messages/s | 926 messages/s |
 | Message-write p99 latency | 20.10 ms | 54.85 ms |
 | Broadcast throughput, 500 recipients | 234.8 messages/s | 252.5 messages/s |
@@ -42,6 +43,9 @@ V persists jobs/retries; Rust has best-effort in-memory queues. Both shared a
 memory cap with their client; reclamation and socket throttling occurred, with
 **zero OOMs**. Host load and client limits also affect results.
 [Full results, conditions, and raw evidence](docs/rust-vs-v.md).
+
+Validation: 32 integration checks, V unit checks, browser checks, and 26.3 million
+HTTP operations passed. The fan-out failures above remain unresolved.
 
 ## Run locally
 
