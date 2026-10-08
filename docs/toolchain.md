@@ -1,13 +1,13 @@
 # Toolchain record
 
-Updated to the latest V main available on 2026-10-06 at 19:59 UTC.
+Updated to the latest V main available on 2026-10-08.
 `toolchains/v.lock.json` records immutable upstream revisions:
 
 | Component | Revision / version |
 | --- | --- |
-| V main (`master`) library/source checkout | `1b4ecb9c05d4a09be1e12eff5725bca45494fdea` |
-| Official portable `vc` bootstrap snapshot | `475a2bd7ec4bed7061721816afb46580c4fe0a5b` |
-| Bootstrap compiler's reported version | `V 0.5.2 02d8026` |
+| V main (`master`) library/source checkout | `245448b41531381f2c51826c61dec5a1b60dc85f` |
+| Official portable `vc` bootstrap snapshot | `6851aaf3f9e696b30b26e406f16095b0002acaab` |
+| Bootstrap compiler's reported version | `V 0.5.2 89371e2` |
 | Official Linux x86-64 TCC dependency bundle | `d6e7ac1b1bcc98aed734a6ecbfa8509f24606c74` |
 | SQLite amalgamation | 3.53.4; publisher SHA3-256 checked |
 | Build C compiler on this machine | GCC 15.2.0 |
@@ -29,9 +29,9 @@ requiring more than 4 GiB before C compilation. Disabling unrelated backends did
 not make it fit. No suitable official Linux binary for this exact revision was
 available in the release/artifact queries performed during development.
 
-The official `vc` snapshot was still the October 4 revision when main was updated.
-The previous self-hosting attempts used main `f34e871`; they were not repeated
-with the higher-memory requirement unchanged.
+The bootstrap snapshot was also refreshed from upstream main. The earlier
+self-hosting attempts used main `f34e871`; the documented memory requirement
+has not changed, so those attempts were not repeated.
 
 This is a material limitation against the requested exact-main toolchain. The
 portable bootstrap successfully builds and tests the app against current-main
