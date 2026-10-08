@@ -1,5 +1,26 @@
 # Browser checks
 
+## Rust-architecture update — 2026-10-08
+
+Checked the optimized V app and current Rust `2e392fe` in local Chromium 153 /
+Playwright 1.63 after T3 preview was blocked by the host's AppArmor configuration.
+Each used isolated seed storage and browser contexts under the resource guard.
+
+Both passed login, 40-message room/history views and 13 matching search results.
+V additionally passed live delivery between two users (including 4 KiB Unicode),
+draft/editor preservation during sidebar refresh and reconnect, historical-anchor
+preservation, ignored callbacks from replaced sockets, and a delayed-response
+room-switch race. A newly uploaded image's thumbnail decoded in the browser; the
+downloaded original matched the fixture bytes. The 390×844 mobile dark layout
+fit the viewport after its navigation transition completed. No page errors or
+failed local HTTP responses were recorded.
+
+[V evidence](validation/20261008-rust-architecture/vampfire-browser.json) ·
+[Rust evidence](validation/20261008-rust-architecture/rust-browser.json).
+The reproducible check is `benchmarks/reference/browser_check.cjs`.
+
+## Previous V-main update
+
 The V main update to `1b4ecb9` was checked in local headless Chromium 153 with
 Playwright 1.63.0 after the collaborative preview host reported it was unavailable.
 Both apps passed sign-in, 40-message room views, history, and 13 search matches.

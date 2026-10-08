@@ -47,10 +47,15 @@ V seed previews are regenerated with the production binary before measurement.
   Push/webhook endpoints fail locally, as upstream. Faster servers accumulate
   more messages/jobs in each fixed time window before later scenarios.
 
+Rust's bounded in-memory queues are best effort and can drop work when full;
+V persists jobs and retries in SQLite. Write throughput therefore includes
+different durability and retry work. Final V queue counts are reported explicitly.
+
 Rust's release executable and media libraries come from the official image;
 it runs with host glibc, five SQLite readers and three workers per job kind.
 V uses `-prod`, GCC/LTO, Boehm GC, four HTTP workers, four SQLite readers, one
-writer, isolated job workers and the upstream WebSocket reactor. Exact flags,
+writer, isolated job workers and four upstream WebSocket reactors sharing the
+original total connection/mailbox budgets. Exact flags,
 source/binary hashes and toolchain identities accompany each run.
 
 ## Workload mapping
@@ -91,7 +96,7 @@ Server CPU includes threads and completed media children; 100% means one core.
 RSS includes live children and is sampled every 100 ms. CPU/op excludes work left
 queued after measurement, so final job counts and peak WAL size are retained.
 Client CPU and unaccounted host CPU are recorded; the latter includes the runner
-and unrelated jobs. CPU affinity does not isolate this shared host. Before each
+kernel work and unrelated jobs. CPU affinity does not isolate this shared host. Before each
 run, wait up to 60 seconds for one-minute load below 1.5 and record actual conditions.
 Client validation can limit saturation throughput.
 

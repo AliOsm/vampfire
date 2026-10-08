@@ -23,25 +23,44 @@ services:stop` removes this development service.
 For public deployment, terminate HTTPS at a trusted reverse proxy, set the HTTPS
 `BASE_URL`, and expose only that proxy. Keep the data directory private to the
 service account. Use one app process and a local filesystem: the WebSocket hub
-and job worker do not implement multiple-instance coordination. The provided
+and presence tracking do not implement multiple-instance coordination. The provided
 Docker configuration is a development HTTP proxy, not a production TLS deployment.
 
-The app has four HTTP workers, four pooled SQLite connections, and one background
-worker. SQLite uses WAL and `synchronous=NORMAL`: committed work survives a process
+The app has four HTTP workers, four SQLite readers and one writer. Connections
+are leased only while executing SQL; writer transactions retain their lease.
+Statements are cached per connection. Background checkpoints begin after another
+1,000 WAL pages; at 10,000 pages a coordinated restart bounds normal growth, though
+long or external readers can delay it. SQLite uses WAL and `synchronous=NORMAL`: committed work survives a process
 crash, but recent commits can be lost after a machine/power failure. `/up` reports
 process liveness. Monitor logs, disk space, and the durable job queue separately.
+
+Four WebSocket reactor workers share a total 2,000-connection limit, 8,192 command
+slots and 16 MiB of mailbox payloads. New peers go to the least-loaded worker.
+Saturated broadcast producers can still overflow a mailbox and disconnect peers
+with code 1013; this is a known capacity limit. The first five abnormal closes are
+logged. A successful message POST confirms storage, not receipt by every peer.
 
 ## Files and jobs
 
 Files live in `.data/uploads`; each upload is capped at 16 MiB. File access is
 checked against ownership, shared rooms, avatars, or the workspace logo. Unknown
-formats download as attachments. Image/video thumbnails and audio metadata use
-FFmpeg/ffprobe with CPU, memory, output-size, protocol, and time limits.
+formats download as attachments. Full files and byte ranges stream to the client.
+PNG/JPEG/GIF previews use V's native `stbi` helper in a bounded subprocess;
+metadata-bearing or unsupported images, videos and audio use FFmpeg/ffprobe.
+Both paths have dimension, memory and time limits.
 
 Media processing, bot callbacks, notifications, and link previews use durable
-SQLite jobs. The single worker retries failed work up to five total attempts,
+SQLite jobs. Media, previews, notification expansion and push tests have separate
+workers; webhooks and individual push deliveries each have two workers. Claims
+are atomic, and commits wake the relevant queue. Failed work retries up to five total attempts,
 then retains its error for inspection. On restart it releases abandoned locks.
 Delivery is at least once; bot replies have stable idempotency keys.
+Notification expansion commits its child jobs and parent removal together.
+
+History, sidebar, directory and search responses share a 16 MiB cache with a
+15-second lifetime, keyed by session and raw URI. Every request still authenticates;
+SQLite commits invalidate cached responses. Static text assets have a separate
+8 MiB budget, with compressed representations and ETags prepared at startup.
 
 Inspect failed jobs with a SQLite client:
 
@@ -67,6 +86,7 @@ overwrite existing keys. A secure browser origin and user-granted notification
 permission are required. Under Profile → Devices & notifications, enable push
 and use the test-notification control. Signing/encryption and recipient targeting
 are tested locally; real provider delivery still requires an HTTPS browser test.
+Startup validates that both VAPID keys are configured and match, or both are empty.
 
 Subscriptions belong to a session. Logout, device revocation, deactivation, and
 session expiry remove their subscriptions. Room involvement and current presence

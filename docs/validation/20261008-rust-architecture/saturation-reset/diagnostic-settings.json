@@ -1,0 +1,38 @@
+{
+  "case": "cable",
+  "apps": [
+    "vampfire"
+  ],
+  "clients": [
+    1000
+  ],
+  "repetitions": 3,
+  "out": ".build/comparison/reactor-diagnostics-20261008",
+  "loadgen_sha256": "a180029d538905f6b564a5237e8948d70c992fd91fdf0bf6b368610f26c51d90",
+  "vampfire_build": {
+    "built_at": "2026-10-08T14:50:50.000716+00:00",
+    "mode": "release",
+    "v_sources": "245448b41531381f2c51826c61dec5a1b60dc85f",
+    "bootstrap_snapshot": "6851aaf3f9e696b30b26e406f16095b0002acaab",
+    "compiler": "V 0.5.2 89371e2",
+    "compiler_origin": "unmodified official vc portable bootstrap; not self-hosted from pinned main",
+    "gcc": "15.2.0",
+    "flags": [
+      "-new-compiler",
+      "-cc",
+      "gcc",
+      "-gc",
+      "boehm",
+      "-nocache",
+      "-d",
+      "veb_max_http_post_size_bytes=17825792",
+      "-cflags",
+      "--param ggc-min-expand=10 --param ggc-min-heapsize=16384 -DSQLITE_ENABLE_FTS5",
+      "-prod"
+    ],
+    "binary_sha256": "a7d92c743e5cf243069c0cc4f487d098b467ce461c271037cb5811376c520b8f",
+    "source_sha256": "88ada3b0a7cb79bd9823d71424694c452395da18206794d5e6b13a9d0696c15e"
+  },
+  "protocol_diagnostics": "Up to five WebSocket read errors/close frames are logged.",
+  "scope": "Fresh isolated seed for each scenario; kept separate from the full-suite medians."
+}

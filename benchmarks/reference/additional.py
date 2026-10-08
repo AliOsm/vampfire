@@ -7,7 +7,9 @@ import signal
 import sqlite3
 import time
 
-from run import App, LOADGEN, REFERENCE, lg, process_stats, validation, write
+from run import App, LOADGEN, REFERENCE, ROOT, lg, process_stats, validation, write
+from report import fanout_errors
+import json
 
 
 def measure(name, repetition, case, directory, count):
@@ -33,7 +35,7 @@ def measure(name, repetition, case, directory, count):
                      "--interval-ms", 200, file=f"cable-{count}")
             report["cable"] = row
             report["passed"] = (row["ready"] == count and row["failed"] == 0
-                                and row["post_errors"] == 0
+                                and fanout_errors(row) == 0
                                 and row["latency"]["complete"] == row["latency"]["messages"]
                                 and row["throughput"]["complete"] == row["throughput"]["posted"])
         elif case == "upload":
@@ -82,7 +84,8 @@ def main():
     args.out.mkdir(parents=True, exist_ok=False)
     write(args.out / "settings.json", {
         **vars(args), "out": str(args.out), "loadgen_sha256": hashlib.sha256(LOADGEN.read_bytes()).hexdigest(),
-        "protocol_diagnostics": "Up to five WebSocket read errors/close frames are logged; app unchanged.",
+        "vampfire_build": json.loads((ROOT / '.build/vampfire.build.json').read_text()),
+        "protocol_diagnostics": "Up to five WebSocket read errors/close frames are logged.",
         "scope": "Fresh isolated seed for each scenario; kept separate from the full-suite medians.",
     })
     for repetition in range(1, args.repetitions + 1):

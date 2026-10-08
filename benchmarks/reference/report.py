@@ -14,7 +14,7 @@ ROUTES = (
 )
 HTTP_FIELDS = (
     "rps", "p50_ms", "p90_ms", "p99_ms", "server_cpu_percent",
-    "client_cpu_percent", "server_cpu_us_per_op", "peak_rss_mib", "avg_bytes",
+    "client_cpu_percent", "host_unaccounted_cpu_percent", "server_cpu_us_per_op", "peak_rss_mib", "avg_bytes",
 )
 
 
@@ -38,7 +38,7 @@ def http_value(row, field):
         return resources["server_sampled_peak_rss_bytes"] / 1024**2
     if field == "server_cpu_us_per_op":
         return resources["server_cpu_seconds"] * 1e6 / row["ok"] if row["ok"] else None
-    return resources[field.replace("_percent", "_percent_one_core")]
+    return resources.get(field.replace("_percent", "_percent_one_core"))
 
 
 def connected_rss(directory, count):
@@ -68,6 +68,7 @@ def upload_summary(runs, key, expected_reps, uploads_per_rep):
         "expected_uploads": expected_reps * uploads_per_rep,
         "recorded_uploads": len(uploads),
         "recorded_successes": sum(r.get("thumb_status") == 200 for r in uploads),
+        "decoded_thumbnails": sum(r.get("pixels_decoded", False) for r in uploads),
         "median_total_ms": distribution(r["median_total_ms"] for r in recorded),
         "thumbnail_bytes": sorted({r["thumb_bytes"] for r in uploads if "thumb_bytes" in r}),
     }
@@ -159,8 +160,8 @@ def summarize(root):
                 row["per_client_" + field] = distribution(c["latency"]["per_client"].get(field) for c in rows)
             row["server_peak_rss_mib"] = distribution(
                 c["resources"]["server_sampled_peak_rss_bytes"] / 1024**2 for c in rows)
-            for field in ("client_cpu_percent", "server_cpu_percent"):
-                row[field] = distribution(c["resources"][field + "_one_core"] for c in rows)
+            for field in ("client_cpu_percent", "server_cpu_percent", "host_unaccounted_cpu_percent"):
+                row[field] = distribution(c["resources"].get(field + "_one_core") for c in rows)
             idle = [connected_rss(root / f"{name}-{r['rep']}", count) for r in runs]
             row["connected_rss_mib"] = distribution(v for v in idle if v is not None)
             summary["cable"].append(row)

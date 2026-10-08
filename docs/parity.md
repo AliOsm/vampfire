@@ -20,7 +20,7 @@ protocol. This matrix tracks product behavior, not identical HTML or Rails URLs.
 | Search | Access-scoped FTS5, literal operator words, pagination, recent searches | HTTP tests; browser 40→80 results with no duplicates |
 | Realtime | New/edit/delete/boost events, typing, presence, disconnect updates, unread counts, reconnect | Two-client WebSocket tests; live browser receipt |
 | Uploads | Preview before sending, remove queued file, progress, retries, image paste/drop, private downloads and ranges | Browser image queue/lightbox; HTTP MIME/access/range tests |
-| Media | Images/thumbnails, audio/video playback, video posters, metadata | FFmpeg processing integration; browser media controls |
+| Media | Images/thumbnails, audio/video playback, video posters, metadata | Native image helper and FFmpeg integration; browser decoding and media controls |
 | Sounds | Campfire sound library, live playback when browser policy permits, manual replay | Browser sound control; vendored original assets |
 | Link previews | Background Open Graph/title/description/image fetch; private images; invalidation on edits | Offline transport fixture, edit-during-fetch regression, real example.com browser fetch |
 | People | Directory/search, profiles, avatars, pagination beyond 500 users | HTTP directory/profile tests; browser settings |

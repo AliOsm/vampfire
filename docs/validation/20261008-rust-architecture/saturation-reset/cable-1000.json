@@ -1,0 +1,92 @@
+{
+  "clients": 1000,
+  "connect_secs": 0.2,
+  "distinct_session_cookies": 1,
+  "failed": 1000,
+  "latency": {
+    "all_clients": {
+      "max_ms": 94.015,
+      "mean_ms": 29.36,
+      "n": 30,
+      "p50_ms": 25.119,
+      "p90_ms": 39.743,
+      "p99_ms": 94.015
+    },
+    "complete": 30,
+    "messages": 30,
+    "per_client": {
+      "max_ms": 94.015,
+      "mean_ms": 22.2,
+      "n": 30000,
+      "p50_ms": 19.455,
+      "p90_ms": 35.743,
+      "p99_ms": 90.239
+    },
+    "post": {
+      "max_ms": 81.471,
+      "mean_ms": 15.82,
+      "n": 30,
+      "p50_ms": 12.183,
+      "p90_ms": 24.575,
+      "p99_ms": 81.471
+    },
+    "post_attempts": 30,
+    "post_errors": 0,
+    "post_successes": 30
+  },
+  "ready": 1000,
+  "refreshes": 0,
+  "session_rows": 1,
+  "subscriptions_per_client": 1,
+  "subscriptions_per_client_range": {
+    "max": 1,
+    "min": 1
+  },
+  "throughput": {
+    "all_clients": {
+      "max_ms": 77.439,
+      "mean_ms": 33.2,
+      "n": 211,
+      "p50_ms": 31.967,
+      "p90_ms": 46.527,
+      "p99_ms": 73.727
+    },
+    "complete": 211,
+    "delivered_msgs_per_sec": 14.0,
+    "drain_secs": 0.0,
+    "frames_per_sec": 14016.0,
+    "per_client": {
+      "max_ms": 77.439,
+      "mean_ms": 27.42,
+      "n": 211000,
+      "p50_ms": 25.967,
+      "p90_ms": 41.951,
+      "p99_ms": 69.567
+    },
+    "post": {
+      "max_ms": 105.215,
+      "mean_ms": 15.24,
+      "n": 3945,
+      "p50_ms": 13.287,
+      "p90_ms": 28.671,
+      "p99_ms": 55.103
+    },
+    "post_attempts": 3945,
+    "post_errors": 0,
+    "posted": 3945,
+    "posters": 4,
+    "posts_per_sec": 262.1,
+    "wire_mb_per_sec": null
+  },
+  "unread_frames": 0,
+  "resources": {
+    "host_unaccounted_cpu_percent_one_core": 73.39954914876893,
+    "wall_seconds": 82.3121091350913,
+    "server_cpu_seconds": 85.15000000000003,
+    "server_cpu_percent_one_core": 103.44771977626179,
+    "client_cpu_seconds": 2.4332830000003014,
+    "client_cpu_percent_one_core": 2.9561665052304487,
+    "server_rss_after_bytes": 103854080,
+    "server_sampled_peak_rss_bytes": 103903232
+  }
+}

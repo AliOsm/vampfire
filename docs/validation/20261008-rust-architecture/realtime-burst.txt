@@ -1,2 +1,2 @@
 Resource guard: 1536 MiB hard cap, no swap; stop at 1152 MiB or 120s
-{"connections": 1000, "complete_broadcasts": 3, "seconds": 2.182}
+{"connections": 1000, "replacements": 500, "complete_broadcasts": 4, "seconds": 2.644}

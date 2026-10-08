@@ -16,3 +16,7 @@ Its npm archive integrity was verified and its license is in `public/vendor/high
 V and the official bootstrap toolchain are downloaded unmodified at the revisions
 in `toolchains/v.lock.json`. SQLite's amalgamation is public domain and its archive
 is checked against the publisher's SHA3-256 hash.
+
+Image decoding/resizing uses the `stb` components bundled with upstream V through
+its `stbi` module. Those components are offered under MIT or public-domain terms;
+their notices remain in the unmodified V toolchain sources.
