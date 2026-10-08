@@ -1,0 +1,123 @@
+{
+  "scope": "Isolated fresh seeds, three alternating repetitions of five actual-thumbnail uploads per app; not pooled with the full suite.",
+  "file": "black_hole.jpg",
+  "input_bytes": 505420,
+  "apps": {
+    "rust": {
+      "expected_repetitions": 3,
+      "recorded_repetitions": 3,
+      "expected_uploads": 15,
+      "recorded_uploads": 15,
+      "recorded_successes": 15,
+      "decoded_thumbnails": 15,
+      "median_total_ms": {
+        "n": 3,
+        "median": 71.1,
+        "min": 67.9,
+        "max": 71.8
+      },
+      "thumbnail_bytes": [
+        84296
+      ],
+      "repetition_medians_ms": [
+        71.1,
+        71.8,
+        67.9
+      ],
+      "successful_repetitions": 3,
+      "resources": {
+        "server_cpu_seconds": {
+          "n": 3,
+          "median": 0.6199999999999999,
+          "min": 0.5999999999999999,
+          "max": 0.6200000000000001
+        },
+        "server_sampled_peak_rss_bytes": {
+          "n": 3,
+          "median": 309776384,
+          "min": 275161088,
+          "max": 310865920
+        },
+        "client_cpu_percent_one_core": {
+          "n": 3,
+          "median": 44.89674378480311,
+          "min": 43.62397108634741,
+          "max": 45.882117133526194
+        },
+        "host_unaccounted_cpu_percent_one_core": {
+          "n": 3,
+          "median": 68.22941169307069,
+          "min": 56.57034865721064,
+          "max": 111.21481917702776
+        }
+      },
+      "upstream_first_image": {
+        "expected_repetitions": 3,
+        "recorded_repetitions": 3,
+        "expected_uploads": 15,
+        "recorded_uploads": 15,
+        "recorded_successes": 15,
+        "decoded_thumbnails": 0,
+        "median_total_ms": {
+          "n": 3,
+          "median": 76.1,
+          "min": 74.0,
+          "max": 82.9
+        },
+        "thumbnail_bytes": [
+          630
+        ]
+      },
+      "order_note": "The legacy avatar-first series precedes the actual-thumbnail series, so Rust media processing is already warm."
+    },
+    "vampfire": {
+      "expected_repetitions": 3,
+      "recorded_repetitions": 3,
+      "expected_uploads": 15,
+      "recorded_uploads": 15,
+      "recorded_successes": 15,
+      "decoded_thumbnails": 15,
+      "median_total_ms": {
+        "n": 3,
+        "median": 150.363371,
+        "min": 149.43672,
+        "max": 159.611781
+      },
+      "thumbnail_bytes": [
+        97639
+      ],
+      "repetition_medians_ms": [
+        150.363371,
+        159.611781,
+        149.43672
+      ],
+      "successful_repetitions": 3,
+      "resources": {
+        "server_cpu_seconds": {
+          "n": 3,
+          "median": 0.7699999999999999,
+          "min": 0.7599999999999999,
+          "max": 0.7799999999999999
+        },
+        "server_sampled_peak_rss_bytes": {
+          "n": 3,
+          "median": 76095488,
+          "min": 75464704,
+          "max": 78503936
+        },
+        "client_cpu_percent_one_core": {
+          "n": 3,
+          "median": 29.32409686701536,
+          "min": 28.87196262318853,
+          "max": 29.38576185095117
+        },
+        "host_unaccounted_cpu_percent_one_core": {
+          "n": 3,
+          "median": 73.56645889040063,
+          "min": 66.97248661011145,
+          "max": 80.94515895966214
+        }
+      }
+    }
+  }
+}

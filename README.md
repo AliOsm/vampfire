@@ -10,27 +10,38 @@ See the [feature and verification matrix](docs/parity.md) for coverage and gaps.
 ## Rust vs V
 
 Original [Campfire Ruby/Rust benchmark workloads](benchmarks/reference/README.md),
-measured **2026-10-06**. Medians of three alternating runs on an Intel i5-8500:
-four server cores, two client cores, native release builds; HTTP at 16 clients.
-**Uneven host load was heavier during Rust runs; throughput ratios are indicative.**
+measured **2026-10-08** after adapting the [Rust optimizations](docs/optimizations.md).
+Medians of three alternating runs on an Intel i5-8500: four server cores, two
+client cores, native release binaries; **V built with `-prod`, GCC/LTO**.
+HTTP uses 16 concurrent clients.
 
 | Metric | [Rust Campfire](https://github.com/basecamp/once-campfire-rust) | Vampfire (V) |
 | --- | ---: | ---: |
-| History throughput, 40 messages | 9,470 ops/s | 4,205 ops/s |
-| Message-write throughput | 1,490 messages/s | 1,462 messages/s |
-| Message-write p99 latency | 28.43 ms | 78.53 ms |
-| Broadcast throughput, 100 recipients | 491.4 messages/s | 568.8 messages/s |
-| Fan-out to 500 recipients | Passed 3/3 | **Failed 3/3** |
-| Idle memory (RSS) | 33.4 MiB | 13.1 MiB |
-| Peak memory during HTTP (RSS) | 117.6 MiB | 49.6 MiB |
-| Server CPU per history operation | 318 µs | 679 µs |
-| Start → health check | 80.4 ms | 348.3 ms |
-| Upload → thumbnail, separate fresh-seed runs | 75.0 ms | 440.9 ms |
+| Room request sequence¹ | 21,142 ops/s | 3,208 ops/s |
+| History throughput, 40 messages | 20,885 ops/s | 30,011 ops/s |
+| History p99 latency | 2.52 ms | 2.97 ms |
+| History throughput with 10 writes/s | 16,953 ops/s | 17,622 ops/s |
+| Search throughput, 13 matches | 23,298 ops/s | 33,089 ops/s |
+| Message-write throughput | 2,082 messages/s | 926 messages/s |
+| Message-write p99 latency | 20.10 ms | 54.85 ms |
+| Broadcast throughput, 500 recipients | 234.8 messages/s | 252.5 messages/s |
+| Fan-out to 1,000 recipients | Passed 3/3 | **Passed 2/3; unreliable** |
+| Idle memory (RSS) | 31.7 MiB | 17.4 MiB |
+| Peak memory during HTTP (RSS) | 116.6 MiB | 49.8 MiB |
+| Server CPU per history operation | 164 µs | 88 µs |
+| Start → health check | 71.0 ms | 390.8 ms |
+| Upload → actual thumbnail, separate fresh seeds | 71.1 ms | 150.4 ms |
 
-V used less RAM; the 500-client connection failure remains. Rendering and media
-pipelines differ, V accumulated notification jobs, and both apps used the same
-memory limits. This run does not isolate the V optimizations' speedup.
-[Full results, caveats, and raw evidence](docs/rust-vs-v.md).
+¹ Rust renders HTML in one request; V serves a shell and four JSON requests.
+V leads on cached read throughput and memory; Rust leads on writes, startup,
+uploads and most tail latencies. Mixed-history ranges overlap. V also failed
+three isolated 1,000-client saturation runs with reactor mailbox overloads.
+
+This compares applications with different payloads, media and job durability:
+V persists jobs/retries; Rust has best-effort in-memory queues. Both shared a
+memory cap with their client; reclamation and socket throttling occurred, with
+**zero OOMs**. Host load and client limits also affect results.
+[Full results, conditions, and raw evidence](docs/rust-vs-v.md).
 
 ## Run locally
 
@@ -50,8 +61,8 @@ In another terminal, run `mise run services`, then open **http://localhost:8088*
 and create your workspace. Docker runs the Caddy development proxy; SQLite is
 embedded. Direct app access: http://localhost:8080.
 
-V libraries use unmodified main at `1b4ecb9`; the official bootstrap compiler
-reports `02d8026`. See the [toolchain record](docs/toolchain.md) for the memory-cap
+V libraries use unmodified main at `245448b`; the official bootstrap compiler
+reports `V 0.5.2 89371e2`. See the [toolchain record](docs/toolchain.md) for the memory-cap
 limitation on building an exact-main compiler.
 
 ```sh

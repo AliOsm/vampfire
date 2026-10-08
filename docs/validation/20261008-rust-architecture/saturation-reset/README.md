@@ -12,3 +12,16 @@ An isolated reproduction using the same production flags confirmed reactor
 `1013 Mailbox full` closes. Its bounded server diagnostics and result are retained
 here. The application follow-up partitions the same total connection/mailbox
 budgets across four upstream reactor workers.
+
+## Four-worker follow-up
+
+The three `four-workers-*-result.json` files retain isolated fresh-seed tests of
+the final four-worker application. All 1,000 clients subscribed and received all
+30 paced messages in every repetition; **all three saturation cases failed**.
+The accompanying server logs still show `1013 Mailbox full` closes. Partitioning
+the budgets did not eliminate overload.
+
+The [four-worker guard](four-workers-resource-guard.json) recorded 391.4 MiB
+sampled peak, with zero memory-high, socket-throttling, OOM or OOM-kill events.
+The [final full comparison](../../../rust-vs-v.md) independently passed two of
+three 1,000-client cases; it does not establish reliable saturation capacity.

@@ -1,0 +1,43 @@
+{
+  "case": "upload",
+  "apps": [
+    "rust",
+    "vampfire"
+  ],
+  "clients": [
+    500,
+    1000
+  ],
+  "repetitions": 3,
+  "out": ".build/comparison/upload-rust-architecture-20261008",
+  "loadgen_sha256": "a180029d538905f6b564a5237e8948d70c992fd91fdf0bf6b368610f26c51d90",
+  "vampfire_build": {
+    "built_at": "2026-10-08T15:00:45.637900+00:00",
+    "mode": "release",
+    "v_sources": "245448b41531381f2c51826c61dec5a1b60dc85f",
+    "bootstrap_snapshot": "6851aaf3f9e696b30b26e406f16095b0002acaab",
+    "compiler": "V 0.5.2 89371e2",
+    "compiler_origin": "unmodified official vc portable bootstrap; not self-hosted from pinned main",
+    "gcc": "15.2.0",
+    "flags": [
+      "-new-compiler",
+      "-cc",
+      "gcc",
+      "-gc",
+      "boehm",
+      "-nocache",
+      "-d",
+      "veb_max_http_post_size_bytes=17825792",
+      "-cflags",
+      "--param ggc-min-expand=10 --param ggc-min-heapsize=16384 -DSQLITE_ENABLE_FTS5",
+      "-prod"
+    ],
+    "binary_sha256": "2354045ba558c0f0ec79b1a9f8098ef044c1174ea019e8095c0fcdd7341af5e6",
+    "source_sha256": "98735e07cb80bdbd00444134536ae516f5e2aa4c1b98c08f6cfb75fda6ae8caa"
+  },
+  "rust_image": "ghcr.io/basecamp/once-campfire-rust@sha256:b62703013928e988cb47cfa840075a445dc2e349dd3f174662ef2de028b65419",
+  "rust_commit": "2e392fe1c839541c3cbfcf0b980ea36310a37393",
+  "verification_commit": "8c7570427490fa7e19311b81837c63162c763494",
+  "protocol_diagnostics": "Up to five WebSocket read errors/close frames are logged.",
+  "scope": "Fresh isolated seed for each scenario; kept separate from the full-suite medians."
+}

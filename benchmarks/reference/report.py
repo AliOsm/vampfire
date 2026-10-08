@@ -204,7 +204,7 @@ def main():
     summary, results = summarize(args.directory)
     (args.directory / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     with (args.directory / "http-summary.csv").open("w", newline="") as stream:
-        writer = csv.writer(stream)
+        writer = csv.writer(stream, lineterminator="\n")
         stats = ("n", "median", "min", "max")
         writer.writerow(["app", "route", "concurrency", *[f"{f}_{s}" for f in HTTP_FIELDS for s in stats]])
         for row in summary["http"]:
