@@ -35,6 +35,7 @@ mut:
 	by_user  map[int][]string
 	by_room  map[int][]string
 	presence map[int][]int
+	close_failures int
 }
 
 struct Command {
@@ -63,13 +64,16 @@ fn socket_message(mut client websocket.ReactorClient, frame &websocket.Message, 
 	}
 }
 
-fn socket_closed(mut client websocket.ReactorClient, _code int, _reason string, ref voidptr) {
+fn socket_closed(mut client websocket.ReactorClient, code int, reason string, ref voidptr) {
 	app := unsafe { &App(ref) }
 	mut hub := app.hub
 	hub.mu.lock()
 	room_id := if peer := hub.peers[client.id] { peer.room_id } else { 0 }
+	if code !in [1000, 1001] { hub.close_failures++ }
+	log_failure := code !in [1000, 1001] && hub.close_failures <= 5
 	hub.remove(client.id)
 	hub.mu.unlock()
+	if log_failure { eprintln('WebSocket closed: ${code} ${reason}') }
 	if room_id > 0 {
 		select {
 			app.commands <- Command{ closed: true, room_id: room_id } {
