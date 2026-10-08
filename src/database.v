@@ -1,40 +1,24 @@
 module main
 
 import db.sqlite
-import os
 import time
 
-fn query(db sqlite.DB, statement string, values ...string) ![]sqlite.Row {
-	return db.exec_param_many(statement, values)
-}
-
-fn one(db sqlite.DB, statement string, values ...string) !sqlite.Row {
+fn one(db &Database, statement string, values ...string) !sqlite.Row {
 	rows := query(db, statement, ...values)!
 	if rows.len == 0 { return error_with_code('Not found.', 404) }
 	return rows[0]
 }
 
-fn execute(db sqlite.DB, statement string, values ...string) ! {
+fn execute(db &Database, statement string, values ...string) ! {
 	query(db, statement, ...values)!
 }
 
-fn exists(db sqlite.DB, statement string, values ...string) bool {
+fn exists(db &Database, statement string, values ...string) bool {
 	rows := query(db, statement, ...values) or { return false }
 	return rows.len > 0
 }
 
-fn open_database(directory string) !sqlite.DB {
-	os.mkdir_all(directory)!
-	db := sqlite.connect(os.join_path(directory, 'vampfire.sqlite3'))!
-	db.busy_timeout(5000)
-	db.exec('PRAGMA journal_mode=WAL')!
-	db.exec('PRAGMA foreign_keys=ON')!
-	db.exec('PRAGMA synchronous=NORMAL')!
-	db.exec('PRAGMA cache_size=-4096')!
-	return db
-}
-
-fn migrate(db sqlite.DB) ! {
+fn migrate(db &Database) ! {
 	version := db.q_int('PRAGMA user_version')!
 	if version > 1 { return error('Database is newer than this application.') }
 	db.exec('BEGIN IMMEDIATE')!
@@ -57,7 +41,7 @@ fn user_from(row sqlite.Row) User {
 	}
 }
 
-fn load_account(db sqlite.DB) !Account {
+fn load_account(db &Database) !Account {
 	r := one(db, 'SELECT * FROM account WHERE id=1')!
 	return Account{
 		name:           r.get_string('name')
@@ -67,7 +51,7 @@ fn load_account(db sqlite.DB) !Account {
 	}
 }
 
-fn load_user(db sqlite.DB, id int) !User {
+fn load_user(db &Database, id int) !User {
 	return user_from(one(db, 'SELECT * FROM users WHERE id=?', id.str())!)
 }
 
@@ -77,7 +61,7 @@ fn require_admin(user User) ! {
 	}
 }
 
-fn room_for(db sqlite.DB, user_id int, room_id int) !Room {
+fn room_for(db &Database, user_id int, room_id int) !Room {
 	r := one(db, 'SELECT r.*,m.involvement,m.read_id FROM rooms r JOIN memberships m ON m.room_id=r.id WHERE r.id=? AND m.user_id=?', room_id.str(), user_id.str())!
 	mut room := Room{
 		id:          r.get_int('id')
@@ -105,6 +89,6 @@ fn require_room_admin(user User, room Room) ! {
 	}
 }
 
-fn queue_job(db sqlite.DB, kind string, payload string) ! {
+fn queue_job(db &Database, kind string, payload string) ! {
 	execute(db, 'INSERT INTO jobs(kind,payload,available_at) VALUES(?,?,?)', kind, payload, time.now().unix().str())!
 }

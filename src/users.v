@@ -1,7 +1,6 @@
 module main
 
 import crypto.bcrypt
-import db.sqlite
 import json2 as json
 import veb
 
@@ -10,7 +9,7 @@ pub fn (app &App) users_index(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, list_users, false)
 }
 
-fn list_users(mut ctx Context, _app &App, db sqlite.DB) !string {
+fn list_users(mut ctx Context, _app &App, db &Database) !string {
 	q := ctx.query['q']
 	if q.len > 100 { return error_with_code('Use a shorter name.', 422) }
 	page := ctx.query['page'].int()
@@ -37,7 +36,7 @@ pub fn (app &App) profile_update(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, update_profile, false)
 }
 
-fn update_profile(mut ctx Context, app &App, db sqlite.DB) !string {
+fn update_profile(mut ctx Context, app &App, db &Database) !string {
 	input := body[ProfileInput](ctx)!
 	if input.name.trim_space() == '' || input.name.len > 100 || input.bio.len > 500 || !input.email.contains('@') || input.email.len > 254 {
 		return error_with_code('Check your name, email, and bio.', 422)
@@ -84,7 +83,7 @@ pub fn (app &App) account_show(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, show_account, false)
 }
 
-fn show_account(mut _ctx Context, _app &App, db sqlite.DB) !string {
+fn show_account(mut _ctx Context, _app &App, db &Database) !string {
 	return json.encode(AccountDetails{ account: load_account(db)!, custom_css: one(db, 'SELECT custom_css FROM account WHERE id=1')!.get_string('custom_css') })
 }
 
@@ -93,7 +92,7 @@ pub fn (app &App) account_update(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, update_account, false)
 }
 
-fn update_account(mut ctx Context, app &App, db sqlite.DB) !string {
+fn update_account(mut ctx Context, app &App, db &Database) !string {
 	require_admin(ctx.user)!
 	input := body[AccountInput](ctx)!
 	if input.name.trim_space() == '' || input.name.len > 100 || input.custom_css.len > 16000 {
@@ -114,7 +113,7 @@ pub fn (app &App) invitation_reset(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, reset_invitation, false)
 }
 
-fn reset_invitation(mut ctx Context, app &App, db sqlite.DB) !string {
+fn reset_invitation(mut ctx Context, app &App, db &Database) !string {
 	require_admin(ctx.user)!
 	execute(db, 'UPDATE account SET join_code=? WHERE id=1', token()[..24])!
 	return show_account(mut ctx, app, db)
@@ -122,8 +121,7 @@ fn reset_invitation(mut ctx Context, app &App, db sqlite.DB) !string {
 
 @['/custom.css']
 pub fn (app &App) custom_styles(mut ctx Context) veb.Result {
-	db := <-app.connections
-	defer { app.connections <- db }
+	db := app.database.session()
 	r := one(db, 'SELECT custom_css FROM account WHERE id=1') or { return ctx.send_response_to_client('text/css', '') }
 	return ctx.send_response_to_client('text/css', r.get_string('custom_css'))
 }
@@ -139,7 +137,7 @@ pub fn (app &App) user_manage(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, manage_user, false)
 }
 
-fn manage_user(mut ctx Context, app &App, db sqlite.DB) !string {
+fn manage_user(mut ctx Context, app &App, db &Database) !string {
 	require_admin(ctx.user)!
 	input := body[ManageUser](ctx)!
 	db.exec('BEGIN IMMEDIATE')!
@@ -198,7 +196,7 @@ pub fn (app &App) sessions_index(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, list_sessions, false)
 }
 
-fn list_sessions(mut ctx Context, _app &App, db sqlite.DB) !string {
+fn list_sessions(mut ctx Context, _app &App, db &Database) !string {
 	mut result := []SessionInfo{}
 	for r in query(db, 'SELECT * FROM sessions WHERE user_id=? ORDER BY active_at DESC', ctx.user.id.str())! {
 		result << SessionInfo{ token: r.get_string('token'), agent: r.get_string('agent'), ip: r.get_string('ip'), active_at: r.get_string('active_at').i64(), current: r.get_string('token') == ctx.session_hash }
@@ -215,7 +213,7 @@ pub fn (app &App) sessions_revoke(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, revoke_session, false)
 }
 
-fn revoke_session(mut ctx Context, app &App, db sqlite.DB) !string {
+fn revoke_session(mut ctx Context, app &App, db &Database) !string {
 	input := body[RevokeSession](ctx)!
 	execute(db, 'DELETE FROM sessions WHERE token=? AND user_id=?', input.token, ctx.user.id.str())!
 	app.disconnect_session(input.token)

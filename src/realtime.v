@@ -1,7 +1,6 @@
 module main
 
 import crypto.sha1
-import db.sqlite
 import encoding.base64
 import json2 as json
 import net.websocket
@@ -80,8 +79,7 @@ fn socket_closed(mut client websocket.ReactorClient, _code int, _reason string, 
 
 @['/ws']
 pub fn (mut app App) websocket_upgrade(mut ctx Context) veb.Result {
-	db := <-app.connections
-	defer { app.connections <- db }
+	db := app.database.session()
 	authenticate(mut ctx, db) or { return ctx.problem(err) }
 	origin := ctx.get_header(.origin) or { '' }
 	host := ctx.get_header(.host) or { '' }
@@ -124,12 +122,12 @@ fn (app &App) deliver(users []int, event Event) {
 	}
 }
 
-fn (app &App) publish_room(db sqlite.DB, room_id int, event Event) {
+fn (app &App) publish_room(db &Database, room_id int, event Event) {
 	rows := query(db, "SELECT m.user_id FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.room_id=? AND u.status='active'", room_id.str()) or { return }
 	app.deliver(rows.map(it.get_int('user_id')), event)
 }
 
-fn (app &App) publish_users(db sqlite.DB) {
+fn (app &App) publish_users(db &Database) {
 	rows := query(db, "SELECT id FROM users WHERE status='active' AND role!='bot'") or { return }
 	app.deliver(rows.map(it.get_int('id')), Event{ kind: 'users' })
 }
@@ -182,9 +180,8 @@ fn socket_worker(app &App) {
 
 fn process_command(app &App, command Command) ! {
 	if command.closed {
-		db := <-app.connections
-		defer { app.connections <- db }
-		app.publish_room(db, command.room_id, Event{ kind: 'presence', room_id: command.room_id, users: app.active_users(command.room_id) })
+		db := app.database.session()
+			app.publish_room(db, command.room_id, Event{ kind: 'presence', room_id: command.room_id, users: app.active_users(command.room_id) })
 		return
 	}
 	mut hub := app.hub
@@ -195,8 +192,7 @@ fn process_command(app &App, command Command) ! {
 	}
 	hub.mu.unlock()
 	input := json.decode[SocketInput](command.text) or { return }
-	db := <-app.connections
-	defer { app.connections <- db }
+	db := app.database.session()
 	if !exists(db, "SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND u.status='active' AND s.expires_at>?", peer.session, time.now().unix().str()) {
 		app.disconnect_session(peer.session)
 		return

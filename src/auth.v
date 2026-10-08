@@ -3,7 +3,6 @@ module main
 import crypto.bcrypt
 import crypto.rand
 import crypto.sha256
-import db.sqlite
 import json2 as json
 import time
 import veb
@@ -14,7 +13,7 @@ fn token() string {
 
 fn digest(value string) string { return sha256.sum(value.bytes()).hex() }
 
-fn authenticate(mut ctx Context, db sqlite.DB) ! {
+fn authenticate(mut ctx Context, db &Database) ! {
 	raw := ctx.get_cookie('vampfire_session') or { return error_with_code('Please sign in.', 401) }
 	if raw.len != 64 { return error_with_code('Please sign in.', 401) }
 	row := one(db, "SELECT u.*,s.csrf,s.token,s.active_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires_at>? AND u.status='active' AND u.role!='bot'", digest(raw), time.now().unix().str()) or {
@@ -28,7 +27,7 @@ fn authenticate(mut ctx Context, db sqlite.DB) ! {
 	}
 }
 
-fn start_session(mut ctx Context, db sqlite.DB, user_id int) ! {
+fn start_session(mut ctx Context, db &Database, user_id int) ! {
 	raw := token()
 	now := time.now().unix()
 	csrf := token()
@@ -72,7 +71,7 @@ pub fn (app &App) setup(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, setup_account, true)
 }
 
-fn setup_account(mut ctx Context, app &App, db sqlite.DB) !string {
+fn setup_account(mut ctx Context, app &App, db &Database) !string {
 	input := body[Credentials](ctx)!
 	validate_credentials(input)!
 	if exists(db, 'SELECT 1 FROM account') {
@@ -109,7 +108,7 @@ pub fn (app &App) login(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, login_user, true)
 }
 
-fn login_user(mut ctx Context, app &App, db sqlite.DB) !string {
+fn login_user(mut ctx Context, app &App, db &Database) !string {
 	rate_limit(db, 'login:${ctx.client_ip}', 10, 180)!
 	if exists(db, 'SELECT 1 FROM bans WHERE ip=?', ctx.client_ip) {
 		return error_with_code('Sign-in is unavailable.', 403)
@@ -130,7 +129,7 @@ pub fn (app &App) signup(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, join_account, true)
 }
 
-fn join_account(mut ctx Context, app &App, db sqlite.DB) !string {
+fn join_account(mut ctx Context, app &App, db &Database) !string {
 	rate_limit(db, 'join:${ctx.client_ip}', 10, 180)!
 	if exists(db, 'SELECT 1 FROM bans WHERE ip=?', ctx.client_ip) {
 		return error_with_code('Sign-up is unavailable.', 403)
@@ -165,7 +164,7 @@ pub fn (app &App) logout(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, logout_user, false)
 }
 
-fn logout_user(mut ctx Context, app &App, db sqlite.DB) !string {
+fn logout_user(mut ctx Context, app &App, db &Database) !string {
 	execute(db, 'DELETE FROM sessions WHERE token=?', ctx.session_hash)!
 	ctx.set_cookie(name: 'vampfire_session', value: '', path: '/', http_only: true, max_age: -1)
 	app.disconnect_session(ctx.session_hash)
@@ -177,7 +176,7 @@ pub fn (app &App) transfer_create(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, create_transfer, false)
 }
 
-fn create_transfer(mut ctx Context, _app &App, db sqlite.DB) !string {
+fn create_transfer(mut ctx Context, _app &App, db &Database) !string {
 	value := token()
 	execute(db, 'INSERT INTO transfers(token,user_id,expires_at) VALUES(?,?,?)', digest(value), ctx.user.id.str(), (time.now().unix() + 14400).str())!
 	return json.encode({
@@ -194,7 +193,7 @@ pub fn (app &App) transfer_redeem(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, redeem_transfer, true)
 }
 
-fn redeem_transfer(mut ctx Context, app &App, db sqlite.DB) !string {
+fn redeem_transfer(mut ctx Context, app &App, db &Database) !string {
 	rate_limit(db, 'transfer:${ctx.client_ip}', 10, 180)!
 	input := body[TransferInput](ctx)!
 	db.exec('BEGIN IMMEDIATE')!

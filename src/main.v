@@ -1,7 +1,6 @@
 module main
 
 import crypto.bcrypt
-import db.sqlite
 import net.websocket
 import os
 import time
@@ -11,7 +10,7 @@ import veb
 pub struct App {
 	veb.StaticHandler
 	veb.Middleware[Context]
-	connections     chan sqlite.DB
+	database        &Database
 	commands        chan Command
 	hub             &Hub
 	data_dir        string
@@ -28,12 +27,11 @@ fn main() {
 	data := os.getenv_opt('VAMPFIRE_DATA') or { '.data' }
 	mut db := open_database(data) or { panic(err) }
 	migrate(db) or { panic(err) }
-	db.close() or {}
 	os.mkdir_all(os.join_path(data, 'uploads')) or { panic(err) }
 	os.mkdir_all(os.join_path(data, 'tmp')) or { panic(err) }
 	port := (os.getenv_opt('PORT') or { '8080' }).int()
 	mut app := &App{
-		connections:     chan sqlite.DB{cap: 4}
+		database:        db
 		commands:        chan Command{cap: 1024}
 		hub:             &Hub{}
 		data_dir:        os.real_path(data)
@@ -43,7 +41,6 @@ fn main() {
 		push_public:     os.getenv('VAPID_PUBLIC_KEY')
 		push_private:    os.getenv('VAPID_PRIVATE_KEY')
 	}
-	for _ in 0 .. 4 { app.connections <- open_database(data) or { panic(err) } }
 	app.use(handler: request_headers)
 	app.mount_static_folder_at('public', '/assets') or { panic(err) }
 	app.reactor = websocket.new_reactor(

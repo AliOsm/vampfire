@@ -1,6 +1,5 @@
 module main
 
-import db.sqlite
 import json2 as json
 import time
 import veb
@@ -28,7 +27,7 @@ pub fn (app &App) bots_index(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, list_bots, false)
 }
 
-fn list_bots(mut ctx Context, _app &App, db sqlite.DB) !string {
+fn list_bots(mut ctx Context, _app &App, db &Database) !string {
 	require_admin(ctx.user)!
 	mut bots := []Bot{}
 	for r in query(db, "SELECT * FROM users WHERE role='bot' AND status='active' ORDER BY lower(name)")! {
@@ -42,7 +41,7 @@ pub fn (app &App) bots_create(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, create_bot, false)
 }
 
-fn create_bot(mut ctx Context, app &App, db sqlite.DB) !string {
+fn create_bot(mut ctx Context, app &App, db &Database) !string {
 	require_admin(ctx.user)!
 	input := body[BotInput](ctx)!
 	validate_bot(input)!
@@ -72,7 +71,7 @@ pub fn (app &App) bots_update(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, update_bot, false)
 }
 
-fn update_bot(mut ctx Context, app &App, db sqlite.DB) !string {
+fn update_bot(mut ctx Context, app &App, db &Database) !string {
 	require_admin(ctx.user)!
 	db.exec('BEGIN IMMEDIATE')!
 	defer { db.exec('ROLLBACK') or {} }
@@ -94,8 +93,7 @@ fn update_bot(mut ctx Context, app &App, db sqlite.DB) !string {
 }
 
 fn bot_request(mut ctx Context, app &App, key string, room_id int, method string, message_id int, boost_id int) veb.Result {
-	db := <-app.connections
-	defer { app.connections <- db }
+	db := app.database.session()
 	r := one(db, "SELECT * FROM users WHERE bot_key=? AND role='bot' AND status='active'", key) or { return ctx.problem(error_with_code('Invalid bot key.', 401)) }
 	ctx.user = user_from(r)
 	room_for(db, ctx.user.id, room_id) or { return ctx.problem(err) }
@@ -104,7 +102,7 @@ fn bot_request(mut ctx Context, app &App, key string, room_id int, method string
 	return ctx.send_response_to_client('application/json', result)
 }
 
-fn perform_bot(mut ctx Context, app &App, db sqlite.DB, method string, id int, boost_id int) !string {
+fn perform_bot(mut ctx Context, app &App, db &Database, method string, id int, boost_id int) !string {
 	room_id := ctx.entity_id
 	if method == 'list' {
 		ctx.set_custom_header('X-Total-Count', one(db, 'SELECT count(*) AS n FROM messages WHERE room_id=?', room_id.str())!.get_int('n').str())!

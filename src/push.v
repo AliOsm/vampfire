@@ -58,7 +58,7 @@ pub fn (app &App) subscriptions_index(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, list_subscriptions, false)
 }
 
-fn list_subscriptions(mut ctx Context, _app &App, db sqlite.DB) !string {
+fn list_subscriptions(mut ctx Context, _app &App, db &Database) !string {
 	mut result := []Subscription{}
 	for r in query(db, 'SELECT * FROM subscriptions WHERE user_id=? ORDER BY id DESC', ctx.user.id.str())! {
 		result << Subscription{ id: r.get_int('id'), endpoint: r.get_string('endpoint'), agent: r.get_string('agent'), created_at: r.get_string('created_at').i64() }
@@ -71,7 +71,7 @@ pub fn (app &App) subscriptions_create(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, create_subscription, false)
 }
 
-fn create_subscription(mut ctx Context, app &App, db sqlite.DB) !string {
+fn create_subscription(mut ctx Context, app &App, db &Database) !string {
 	if app.push_public == '' || app.push_private == '' {
 		return error_with_code('Push notifications are not configured on this server.', 503)
 	}
@@ -87,7 +87,7 @@ pub fn (app &App) subscriptions_delete(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, delete_subscription, false)
 }
 
-fn delete_subscription(mut ctx Context, _app &App, db sqlite.DB) !string {
+fn delete_subscription(mut ctx Context, _app &App, db &Database) !string {
 	execute(db, 'DELETE FROM subscriptions WHERE id=? AND user_id=?', ctx.entity_id.str(), ctx.user.id.str())!
 	return json.encode(Success{})
 }
@@ -98,18 +98,18 @@ pub fn (app &App) subscriptions_test(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, queue_test_push, false)
 }
 
-fn queue_test_push(mut ctx Context, _app &App, db sqlite.DB) !string {
+fn queue_test_push(mut ctx Context, _app &App, db &Database) !string {
 	one(db, 'SELECT id FROM subscriptions WHERE id=? AND user_id=?', ctx.entity_id.str(), ctx.user.id.str())!
 	queue_job(db, 'push_test', ctx.entity_id.str())!
 	return json.encode(Success{})
 }
 
-fn test_push(app &App, db sqlite.DB, id int) ! {
+fn test_push(app &App, db &Database, id int) ! {
 	r := one(db, 'SELECT * FROM subscriptions WHERE id=?', id.str()) or { return }
 	send_push(app, db, r, Notification{ title: 'Vampfire', body: 'Notifications are working.', path: '/' })!
 }
 
-fn notify_message(app &App, db sqlite.DB, id int) ! {
+fn notify_message(app &App, db &Database, id int) ! {
 	if app.push_public == '' || app.push_private == '' { return }
 	r := one(db, 'SELECT m.*,u.name,r.name AS room_name,r.kind FROM messages m JOIN users u ON u.id=m.user_id JOIN rooms r ON r.id=m.room_id WHERE m.id=?', id.str()) or { return }
 	room_id := r.get_int('room_id')
@@ -132,7 +132,7 @@ fn notify_message(app &App, db sqlite.DB, id int) ! {
 	}
 }
 
-fn notification_recipients(db sqlite.DB, room_id int, sender_id int, message_id int, present []int) ![]sqlite.Row {
+fn notification_recipients(db &Database, room_id int, sender_id int, message_id int, present []int) ![]sqlite.Row {
 	mut recipients := []sqlite.Row{}
 	for row in query(db, "SELECT s.* FROM subscriptions s JOIN sessions device ON device.token=s.session_token JOIN memberships k ON k.user_id=s.user_id JOIN users u ON u.id=s.user_id WHERE k.room_id=? AND s.user_id!=? AND u.status='active' AND device.expires_at>? AND (k.involvement='everything' OR (k.involvement='mentions' AND s.user_id IN(SELECT user_id FROM mentions WHERE message_id=?)))", room_id.str(), sender_id.str(), time.now().unix().str(), message_id.str())! {
 		if row.get_int('user_id') !in present { recipients << row }
@@ -204,7 +204,7 @@ fn jose_signature(der []u8) ![]u8 {
 	return result
 }
 
-fn send_push(app &App, db sqlite.DB, row sqlite.Row, notification Notification) ! {
+fn send_push(app &App, db &Database, row sqlite.Row, notification Notification) ! {
 	input := PushInput{ endpoint: row.get_string('endpoint'), p256dh: row.get_string('p256dh'), auth: row.get_string('auth') }
 	validate_subscription(input)!
 	url := urllib.parse(input.endpoint)!

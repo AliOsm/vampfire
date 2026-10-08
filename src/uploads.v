@@ -32,14 +32,14 @@ fn upload_from(r sqlite.Row) Upload {
 	return Upload{ id: r.get_int('id'), name: r.get_string('name'), mime: r.get_string('mime'), size: r.get_string('size').i64(), thumb: r.get_string('thumb'), width: r.get_int('width'), height: r.get_int('height'), duration: r.get_string('duration').f64() }
 }
 
-fn require_image_upload(db sqlite.DB, owner int, id int) ! {
+fn require_image_upload(db &Database, owner int, id int) ! {
 	r := one(db, 'SELECT mime FROM uploads WHERE id=? AND owner_id=?', id.str(), owner.str())!
 	if !r.get_string('mime').starts_with('image/') {
 		return error_with_code('Choose a PNG, JPEG, GIF, or WebP image.', 422)
 	}
 }
 
-fn store_upload(app &App, db sqlite.DB, user_id int, name string, data string, mime string) !Upload {
+fn store_upload(app &App, db &Database, user_id int, name string, data string, mime string) !Upload {
 	if data.len == 0 || data.len > upload_limit {
 		return error_with_code('Files must be between 1 byte and 16 MiB.', 413)
 	}
@@ -67,7 +67,7 @@ pub fn (app &App) uploads_create(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, create_upload, false)
 }
 
-fn create_upload(mut ctx Context, app &App, db sqlite.DB) !string {
+fn create_upload(mut ctx Context, app &App, db &Database) !string {
 	files := ctx.files['file'] or { return error_with_code('Choose a file.', 422) }
 	if files.len != 1 { return error_with_code('Upload one file at a time.', 422) }
 	file := files[0]
@@ -76,14 +76,13 @@ fn create_upload(mut ctx Context, app &App, db sqlite.DB) !string {
 	return json.encode(upload)
 }
 
-fn can_download(db sqlite.DB, user_id int, upload_id int) bool {
+fn can_download(db &Database, user_id int, upload_id int) bool {
 	return exists(db, 'SELECT 1 FROM uploads a WHERE a.id=? AND (a.owner_id=? OR EXISTS(SELECT 1 FROM messages m JOIN memberships k ON k.room_id=m.room_id WHERE m.upload_id=a.id AND k.user_id=?) OR EXISTS(SELECT 1 FROM link_previews p JOIN messages m ON m.id=p.message_id JOIN memberships k ON k.room_id=m.room_id WHERE p.image_id=a.id AND k.user_id=?) OR EXISTS(SELECT 1 FROM users u WHERE u.avatar_id=a.id) OR EXISTS(SELECT 1 FROM account WHERE logo_id=a.id))', upload_id.str(), user_id.str(), user_id.str(), user_id.str())
 }
 
 @['/uploads/:id']
 pub fn (app &App) upload_download(mut ctx Context, id int) veb.Result {
-	db := <-app.connections
-	defer { app.connections <- db }
+	db := app.database.session()
 	authenticate(mut ctx, db) or { return ctx.problem(err) }
 	if !can_download(db, ctx.user.id, id) {
 		return ctx.problem(error_with_code('File not found.', 404))
@@ -94,8 +93,7 @@ pub fn (app &App) upload_download(mut ctx Context, id int) veb.Result {
 
 @['/avatar/:id']
 pub fn (app &App) avatar_download(mut ctx Context, id int) veb.Result {
-	db := <-app.connections
-	defer { app.connections <- db }
+	db := app.database.session()
 	authenticate(mut ctx, db) or { return ctx.problem(err) }
 	r := one(db, 'SELECT a.* FROM uploads a JOIN users u ON u.avatar_id=a.id WHERE u.id=?', id.str()) or { return ctx.not_found() }
 	return serve_upload(mut ctx, app, r, true)
@@ -103,8 +101,7 @@ pub fn (app &App) avatar_download(mut ctx Context, id int) veb.Result {
 
 @['/logo']
 pub fn (app &App) logo_download(mut ctx Context) veb.Result {
-	db := <-app.connections
-	defer { app.connections <- db }
+	db := app.database.session()
 	r := one(db, 'SELECT a.* FROM uploads a JOIN account c ON c.logo_id=a.id WHERE c.id=1') or { return ctx.not_found() }
 	return serve_upload(mut ctx, app, r, true)
 }

@@ -23,8 +23,7 @@ struct Manifest {
 
 @['/webmanifest']
 pub fn (app &App) manifest(mut ctx Context) veb.Result {
-	db := <-app.connections
-	defer { app.connections <- db }
+	db := app.database.session()
 	account := load_account(db) or { Account{ name: 'Vampfire' } }
 	return ctx.send_response_to_client('application/manifest+json', json.encode(Manifest{
 		name:             account.name

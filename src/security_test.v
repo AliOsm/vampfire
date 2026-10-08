@@ -2,7 +2,7 @@ module main
 
 import crypto.ecdsa
 import encoding.base64
-import db.sqlite
+import os
 import time
 
 // RFC 8291 section 5 and Appendix A. This checks the wire representation against
@@ -47,8 +47,12 @@ fn test_rich_text_fragments() ! {
 }
 
 fn test_notification_targeting_and_session_cleanup() ! {
-	mut db := sqlite.connect(':memory:')!
-	defer { db.close() or {} }
+	directory := os.join_path(os.temp_dir(), 'vampfire-notification-' + token())
+	db := open_database(directory)!
+	defer {
+		db.close() or {}
+		os.rmdir_all(directory) or {}
+	}
 	db.exec('PRAGMA foreign_keys=ON')!
 	migrate(db)!
 	for id in 1 .. 10 {
@@ -81,4 +85,37 @@ fn test_notification_targeting_and_session_cleanup() ! {
 	assert notification_recipients(db, 1, 1, 1, [6])!.map(it.get_int('user_id')) == [2]
 	execute(db, 'UPDATE sessions SET expires_at=0 WHERE user_id=2')!
 	assert notification_recipients(db, 1, 1, 1, [6])!.len == 0
+}
+
+fn test_database_sessions_commit_rollback_and_cached_bindings() ! {
+	directory := os.join_path(os.temp_dir(), 'vampfire-sqlite-' + token())
+	db := open_database(directory)!
+	defer {
+		db.close() or {}
+		os.rmdir_all(directory) or {}
+	}
+	db.exec('CREATE TABLE sample(id INTEGER PRIMARY KEY, value TEXT UNIQUE)')!
+	writer := db.session()
+	reader := db.session()
+	before := reader.generation()!
+	writer.exec('BEGIN IMMEDIATE')!
+	execute(writer, 'INSERT INTO sample(value) VALUES(?)', 'first')!
+	first_id := writer.last_insert_rowid()
+	assert one(reader, 'SELECT count(*) AS n FROM sample')!.get_int('n') == 0
+	writer.exec('COMMIT')!
+	assert reader.generation()! > before
+	assert one(reader, 'SELECT value FROM sample WHERE id=?', first_id.str())!.vals[0] == 'first'
+	writer.exec('BEGIN IMMEDIATE')!
+	execute(writer, 'INSERT INTO sample(value) VALUES(?)', 'discarded')!
+	writer.exec('ROLLBACK')!
+	assert one(reader, 'SELECT count(*) AS n FROM sample')!.get_int('n') == 1
+	for value in ['second', 'Unicode 🚀', 'embedded\x00zero', ''] {
+		execute(writer, 'INSERT INTO sample(value) VALUES(?)', value)!
+		assert one(reader, 'SELECT value FROM sample WHERE id=?', writer.last_insert_rowid().str())!.vals[0] == value
+	}
+	// An evicted statement can be prepared again, without retaining old bindings.
+	for i in 0 .. 270 {
+		assert one(reader, 'SELECT ${i}')!.vals[0].int() == i
+	}
+	assert one(reader, 'SELECT value FROM sample WHERE id=?', first_id.str())!.vals[0] == 'first'
 }

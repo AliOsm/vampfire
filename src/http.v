@@ -1,6 +1,5 @@
 module main
 
-import db.sqlite
 import json2 as json
 import net
 import net.http
@@ -19,7 +18,7 @@ pub mut:
 	secure_cookie bool
 }
 
-type Handler = fn (mut Context, &App, sqlite.DB) !string
+type Handler = fn (mut Context, &App, &Database) !string
 
 fn (mut ctx Context) problem(err IError) veb.Result {
 	mut status := err.code()
@@ -45,8 +44,7 @@ fn body[T](ctx &Context) !T {
 fn respond(mut ctx Context, app &App, handler Handler, public bool) veb.Result {
 	ctx.client_ip = request_ip(ctx, app)
 	ctx.secure_cookie = app.base_url.starts_with('https://')
-	db := <-app.connections
-	defer { app.connections <- db }
+	db := app.database.session()
 	if !public {
 		authenticate(mut ctx, db) or { return ctx.problem(err) }
 		if ctx.user.role == 'bot' {
@@ -123,7 +121,7 @@ struct Bootstrap {
 	push_key string
 }
 
-fn bootstrap_data(mut ctx Context, app &App, db sqlite.DB) !string {
+fn bootstrap_data(mut ctx Context, app &App, db &Database) !string {
 	if !exists(db, 'SELECT 1 FROM account') { return json.encode(Bootstrap{ setup: true }) }
 	account := load_account(db)!
 	authenticate(mut ctx, db) or {}
@@ -139,7 +137,7 @@ fn bootstrap_data(mut ctx Context, app &App, db sqlite.DB) !string {
 	})
 }
 
-fn rate_limit(db sqlite.DB, key string, limit int, seconds int) ! {
+fn rate_limit(db &Database, key string, limit int, seconds int) ! {
 	now := time.now().unix()
 	execute(db, 'INSERT INTO rate_limits(key,count,reset_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN reset_at<? THEN 1 ELSE count+1 END, reset_at=CASE WHEN reset_at<? THEN excluded.reset_at ELSE reset_at END', key, (now + seconds).str(), now.str(), now.str())!
 	r := one(db, 'SELECT count FROM rate_limits WHERE key=?', key)!

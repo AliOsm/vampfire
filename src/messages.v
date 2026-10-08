@@ -7,7 +7,7 @@ import veb
 
 const message_select = 'SELECT m.*,u.name,u.avatar_id,a.id AS attachment_id,a.name AS filename,a.mime,a.size,a.thumb,a.width,a.height,a.duration FROM messages m JOIN users u ON u.id=m.user_id LEFT JOIN uploads a ON a.id=m.upload_id '
 
-fn messages_from(db sqlite.DB, rows []sqlite.Row) ![]ChatMessage {
+fn messages_from(db &Database, rows []sqlite.Row) ![]ChatMessage {
 	mut messages := []ChatMessage{}
 	mut indices := map[int]int{}
 	mut ids := []string{}
@@ -52,7 +52,7 @@ fn messages_from(db sqlite.DB, rows []sqlite.Row) ![]ChatMessage {
 	return messages
 }
 
-fn message_by_id(db sqlite.DB, user_id int, id int) !ChatMessage {
+fn message_by_id(db &Database, user_id int, id int) !ChatMessage {
 	rows := query(db, message_select + 'JOIN memberships k ON k.room_id=m.room_id WHERE m.id=? AND k.user_id=?', id.str(), user_id.str())!
 	if rows.len == 0 { return error_with_code('Message not found.', 404) }
 	return messages_from(db, rows)![0]
@@ -64,7 +64,7 @@ pub fn (app &App) messages_index(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, list_messages, false)
 }
 
-fn list_messages(mut ctx Context, _app &App, db sqlite.DB) !string {
+fn list_messages(mut ctx Context, _app &App, db &Database) !string {
 	room_for(db, ctx.user.id, ctx.entity_id)!
 	before := ctx.query['before'].int()
 	after := ctx.query['after'].int()
@@ -97,7 +97,7 @@ pub fn (app &App) messages_create(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, create_message, false)
 }
 
-fn create_message(mut ctx Context, app &App, db sqlite.DB) !string {
+fn create_message(mut ctx Context, app &App, db &Database) !string {
 	input := body[MessageInput](ctx)!
 	message := save_message(db, ctx.user, ctx.entity_id, input)!
 	app.publish_room(db, ctx.entity_id, Event{ kind: 'message', room_id: ctx.entity_id, message: message })
@@ -105,7 +105,7 @@ fn create_message(mut ctx Context, app &App, db sqlite.DB) !string {
 	return json.encode(message)
 }
 
-fn save_message(db sqlite.DB, user User, room_id int, input MessageInput) !ChatMessage {
+fn save_message(db &Database, user User, room_id int, input MessageInput) !ChatMessage {
 	content := room_rich_text(db, room_id, input.body)!
 	if content.plain.trim_space() == '' && input.upload_id == 0 {
 		return error_with_code('Write a message or attach a file.', 422)
@@ -161,7 +161,7 @@ pub fn (app &App) messages_update(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, update_message, false)
 }
 
-fn update_message(mut ctx Context, app &App, db sqlite.DB) !string {
+fn update_message(mut ctx Context, app &App, db &Database) !string {
 	input := body[MessageInput](ctx)!
 	db.exec('BEGIN IMMEDIATE')!
 	defer { db.exec('ROLLBACK') or {} }
@@ -195,7 +195,7 @@ pub fn (app &App) messages_delete(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, delete_message, false)
 }
 
-fn delete_message(mut ctx Context, app &App, db sqlite.DB) !string {
+fn delete_message(mut ctx Context, app &App, db &Database) !string {
 	db.exec('BEGIN IMMEDIATE')!
 	defer { db.exec('ROLLBACK') or {} }
 	message := message_by_id(db, ctx.user.id, ctx.entity_id)!
@@ -219,7 +219,7 @@ pub fn (app &App) boosts_create(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, create_boost, false)
 }
 
-fn create_boost(mut ctx Context, app &App, db sqlite.DB) !string {
+fn create_boost(mut ctx Context, app &App, db &Database) !string {
 	input := body[BoostInput](ctx)!
 	if input.content.trim_space() == '' || input.content.runes().len > 16 {
 		return error_with_code('A boost can contain 1–16 characters.', 422)
@@ -238,7 +238,7 @@ pub fn (app &App) boosts_delete(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, delete_boost, false)
 }
 
-fn delete_boost(mut ctx Context, app &App, db sqlite.DB) !string {
+fn delete_boost(mut ctx Context, app &App, db &Database) !string {
 	r := one(db, 'SELECT message_id FROM boosts WHERE id=? AND user_id=?', ctx.entity_id.str(), ctx.user.id.str())!
 	message := message_by_id(db, ctx.user.id, r.get_int('message_id'))!
 	execute(db, 'DELETE FROM boosts WHERE id=? AND user_id=?', ctx.entity_id.str(), ctx.user.id.str())!
@@ -256,7 +256,7 @@ struct SearchResult {
 	recent   []string
 }
 
-fn search_messages(mut ctx Context, _app &App, db sqlite.DB) !string {
+fn search_messages(mut ctx Context, _app &App, db &Database) !string {
 	q := ctx.query['q'].trim_space()
 	if q.len > 200 { return error_with_code('Use a shorter search.', 422) }
 	mut messages := []ChatMessage{}
@@ -283,7 +283,7 @@ pub fn (app &App) searches_save(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, save_search, false)
 }
 
-fn save_search(mut ctx Context, _app &App, db sqlite.DB) !string {
+fn save_search(mut ctx Context, _app &App, db &Database) !string {
 	input := body[SearchInput](ctx)!
 	if input.query.len > 200 || input.query.trim_space() == '' {
 		return error_with_code('Enter a search query.', 422)
@@ -298,7 +298,7 @@ pub fn (app &App) searches_clear(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, clear_search, false)
 }
 
-fn clear_search(mut ctx Context, _app &App, db sqlite.DB) !string {
+fn clear_search(mut ctx Context, _app &App, db &Database) !string {
 	execute(db, 'DELETE FROM searches WHERE user_id=?', ctx.user.id.str())!
 	return json.encode(Success{})
 }

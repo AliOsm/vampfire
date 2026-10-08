@@ -1,6 +1,5 @@
 module main
 
-import db.sqlite
 import json2 as json
 import net.html
 import net.urllib
@@ -9,11 +8,7 @@ import time
 import veb
 
 fn job_worker(app &App) {
-	mut db := open_database(app.data_dir) or {
-		eprintln(err)
-		return
-	}
-	defer { db.close() or {} }
+	db := app.database.session()
 	execute(db, 'UPDATE jobs SET locked_at=0 WHERE locked_at>0') or { eprintln(err) }
 	mut next_maintenance := i64(0)
 	for {
@@ -29,7 +24,7 @@ fn job_worker(app &App) {
 	}
 }
 
-fn run_next_job(app &App, db sqlite.DB) !bool {
+fn run_next_job(app &App, db &Database) !bool {
 	rows := query(db, 'SELECT * FROM jobs WHERE available_at<=? AND locked_at=0 AND attempts<5 ORDER BY id LIMIT 1', time.now().unix().str())!
 	if rows.len == 0 { return false }
 	r := rows[0]
@@ -48,7 +43,7 @@ fn run_next_job(app &App, db sqlite.DB) !bool {
 	return true
 }
 
-fn maintain_store(app &App, db sqlite.DB) ! {
+fn maintain_store(app &App, db &Database) ! {
 	now := time.now().unix()
 	execute(db, 'DELETE FROM transfers WHERE expires_at<?', now.str())!
 	execute(db, 'DELETE FROM sessions WHERE expires_at<?', now.str())!
@@ -66,7 +61,7 @@ fn maintain_store(app &App, db sqlite.DB) ! {
 	}
 }
 
-fn execute_job(app &App, db sqlite.DB, kind string, payload string) ! {
+fn execute_job(app &App, db &Database, kind string, payload string) ! {
 	match kind {
 		'media' { process_media(app, db, payload.int())! }
 		'webhook' { deliver_webhook(app, db, json.decode[WebhookJob](payload)!)! }
@@ -77,7 +72,7 @@ fn execute_job(app &App, db sqlite.DB, kind string, payload string) ! {
 	}
 }
 
-fn process_media(app &App, db sqlite.DB, id int) ! {
+fn process_media(app &App, db &Database, id int) ! {
 	r := one(db, 'SELECT * FROM uploads WHERE id=?', id.str()) or { return }
 	mime := r.get_string('mime')
 	if !mime.starts_with('image/') && !mime.starts_with('video/') && !mime.starts_with('audio/') {
@@ -151,7 +146,7 @@ struct WebhookPayload {
 	message WebhookMessage
 }
 
-fn deliver_webhook(app &App, db sqlite.DB, job WebhookJob) ! {
+fn deliver_webhook(app &App, db &Database, job WebhookJob) ! {
 	bot := one(db, "SELECT * FROM users WHERE id=? AND role='bot' AND status='active'", job.bot_id.str()) or { return }
 	message := message_by_id(db, job.bot_id, job.message_id) or { return }
 	room := room_for(db, job.bot_id, message.room_id) or { return }
@@ -198,14 +193,14 @@ pub fn (app &App) links_unfurl(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, unfurl_link, false)
 }
 
-fn unfurl_link(mut ctx Context, app &App, db sqlite.DB) !string {
+fn unfurl_link(mut ctx Context, app &App, db &Database) !string {
 	rate_limit(db, 'unfurl:${ctx.user.id}', 20, 60)!
 	input := body[UnfurlInput](ctx)!
 	preview := fetch_preview(app, db, input.url, ctx.user.id, false)!
 	return json.encode(preview)
 }
 
-fn fetch_preview(app &App, db sqlite.DB, url string, owner_id int, with_image bool) !LinkPreview {
+fn fetch_preview(app &App, db &Database, url string, owner_id int, with_image bool) !LinkPreview {
 	response := fetch_url(app, url, 'GET', '', {}, true)!
 	if response.status != 200 || !(response.headers['content-type'] or { '' }).contains('text/html') {
 		return LinkPreview{ url: url }
@@ -246,7 +241,7 @@ fn fetch_preview(app &App, db sqlite.DB, url string, owner_id int, with_image bo
 	return LinkPreview{ url: url, title: title, description: description, image_id: image_id }
 }
 
-fn preview_message(app &App, db sqlite.DB, id int) ! {
+fn preview_message(app &App, db &Database, id int) ! {
 	row := one(db, 'SELECT user_id FROM messages WHERE id=?', id.str()) or { return }
 	message := message_by_id(db, row.get_int('user_id'), id) or { return }
 	dom := html.parse('<vampfire-root>${message.body}</vampfire-root>')

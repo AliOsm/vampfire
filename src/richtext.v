@@ -1,7 +1,6 @@
 module main
 
 import encoding.html as entities
-import db.sqlite
 import net.html
 import strings
 import strconv
@@ -54,7 +53,7 @@ fn rich_text(source string) !RichText {
 	return rich_text_named(source, {})
 }
 
-fn room_rich_text(db sqlite.DB, room_id int, source string) !RichText {
+fn room_rich_text(db &Database, room_id int, source string) !RichText {
 	if !source.contains('data-mention') { return rich_text(source) }
 	mut names := map[int]string{}
 	if source.contains('data-mention') {

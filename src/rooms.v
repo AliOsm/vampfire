@@ -1,6 +1,5 @@
 module main
 
-import db.sqlite
 import json2 as json
 import time
 import veb
@@ -10,7 +9,7 @@ pub fn (app &App) rooms_index(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, list_rooms, false)
 }
 
-fn list_rooms(mut ctx Context, _app &App, db sqlite.DB) !string {
+fn list_rooms(mut ctx Context, _app &App, db &Database) !string {
 	rows := query(db, "SELECT r.*,m.involvement,(SELECT count(*) FROM messages x WHERE x.room_id=r.id AND x.id>m.read_id AND x.user_id!=m.user_id) AS unread,(SELECT coalesce(max(id),0) FROM messages x WHERE x.room_id=r.id) AS last_id,(SELECT group_concat(user_id) FROM memberships WHERE room_id=r.id) AS members,(SELECT group_concat(u.name, ', ') FROM users u JOIN memberships k ON k.user_id=u.id WHERE k.room_id=r.id AND u.id!=m.user_id) AS direct_name FROM rooms r JOIN memberships m ON m.room_id=r.id WHERE m.user_id=? ORDER BY r.kind,lower(r.name),r.id", ctx.user.id.str())!
 	mut rooms := []Room{}
 	for r in rows {
@@ -43,7 +42,7 @@ pub fn (app &App) rooms_create(mut ctx Context) veb.Result {
 	return respond(mut ctx, app, create_room, false)
 }
 
-fn create_room(mut ctx Context, app &App, db sqlite.DB) !string {
+fn create_room(mut ctx Context, app &App, db &Database) !string {
 	input := body[RoomInput](ctx)!
 	if input.kind !in ['open', 'closed', 'direct'] {
 		return error_with_code('Choose a room type.', 422)
@@ -103,7 +102,7 @@ pub fn (app &App) rooms_update(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, update_room, false)
 }
 
-fn update_room(mut ctx Context, app &App, db sqlite.DB) !string {
+fn update_room(mut ctx Context, app &App, db &Database) !string {
 	input := body[RoomInput](ctx)!
 	db.exec('BEGIN IMMEDIATE')!
 	defer { db.exec('ROLLBACK') or {} }
@@ -151,7 +150,7 @@ pub fn (app &App) rooms_delete(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, delete_room, false)
 }
 
-fn delete_room(mut ctx Context, app &App, db sqlite.DB) !string {
+fn delete_room(mut ctx Context, app &App, db &Database) !string {
 	db.exec('BEGIN IMMEDIATE')!
 	defer { db.exec('ROLLBACK') or {} }
 	room := room_for(db, ctx.user.id, ctx.entity_id)!
@@ -169,7 +168,7 @@ pub fn (app &App) involvement_update(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, update_involvement, false)
 }
 
-fn update_involvement(mut ctx Context, app &App, db sqlite.DB) !string {
+fn update_involvement(mut ctx Context, app &App, db &Database) !string {
 	input := body[RoomInput](ctx)!
 	room_for(db, ctx.user.id, ctx.entity_id)!
 	if input.involvement !in ['invisible', 'nothing', 'mentions', 'everything'] {
@@ -186,7 +185,7 @@ pub fn (app &App) room_read(mut ctx Context, id int) veb.Result {
 	return respond(mut ctx, app, mark_read, false)
 }
 
-fn mark_read(mut ctx Context, app &App, db sqlite.DB) !string {
+fn mark_read(mut ctx Context, app &App, db &Database) !string {
 	room_for(db, ctx.user.id, ctx.entity_id)!
 	execute(db, 'UPDATE memberships SET read_id=coalesce((SELECT max(id) FROM messages WHERE room_id=?),0) WHERE room_id=? AND user_id=?', ctx.entity_id.str(), ctx.entity_id.str(), ctx.user.id.str())!
 	app.deliver([ctx.user.id], Event{ kind: 'read', room_id: ctx.entity_id })
