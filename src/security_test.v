@@ -44,6 +44,14 @@ fn test_rich_text_fragments() ! {
 	assert rich_text('<p>hello <em>there</em> friend</p>')!.plain == 'hello there friend'
 	assert rich_text('<img src=x onerror=alert(1)>safe')!.plain == 'safe'
 	assert rich_text('<svg onload=alert(1)></svg><p>safe</p>')!.html.contains('<p>safe</p>')
+	assert rich_text('plain &amp; text')!.html == 'plain &amp; text'
+	assert rich_text('<p title="<not-a-tag>">hello</p>')!.plain == 'hello'
+	if _ := rich_text('<div>'.repeat(100) + 'deep' + '</div>'.repeat(100)) {
+		assert false
+	}
+	if _ := rich_text('<p ' + 'data-long=x '.repeat(200) + '>large</p>') {
+		assert false
+	}
 }
 
 fn test_notification_targeting_and_session_cleanup() ! {

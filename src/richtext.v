@@ -71,6 +71,11 @@ fn rich_text_named(source string, names map[int]string) !RichText {
 	if source.count('<') > 1000 {
 		return error_with_code('This message contains too much markup.', 422)
 	}
+	if !source.contains('<') {
+		plain := unescape_html(source)
+		return RichText{ html: escape(plain), plain: plain.trim_space() }
+	}
+	check_markup_complexity(source)!
 	// Parse a fragment beneath an inert root so adjacent top-level elements and
 	// text before/after them remain siblings in V's document-oriented parser.
 	dom := html.parse('<vampfire-root>${source}</vampfire-root>')
@@ -109,7 +114,8 @@ fn render_rich(tag &html.Tag, mut out strings.Builder, mut plain strings.Builder
 	}
 	if name == 'a' {
 		href := unescape_html(tag.attributes['href'] or { '' }).trim_space()
-		if href.to_lower().starts_with('https://') || href.to_lower().starts_with('http://') || href.starts_with('mailto:') {
+		lower := href.to_lower()
+		if lower.starts_with('https://') || lower.starts_with('http://') || lower.starts_with('mailto:') {
 			attrs = ' href="${escape(href)}" rel="noopener noreferrer" target="_blank"'
 		}
 	}
